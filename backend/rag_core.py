@@ -2,8 +2,12 @@
 # 从你 11-10 的 app.py 里原样抽出来，只改了一处：向量改成第一次用时才算（懒加载），
 # 不然三个服务启动时各算 4 次 embedding，白白烧 3 倍 token。
 import os, math
+from dotenv import load_dotenv, find_dotenv  # 读 .env 文件
 from openai import OpenAI
 from chunk_search import load_text, chunk_text, search  # search 是转给检索服务用的
+
+
+load_dotenv(find_dotenv())  # 从 backend/ 启动也能找到项目根目录的 .env
 
 text = load_text("sample.txt")
 chunks = chunk_text(text)

@@ -94,4 +94,6 @@ services:
 
 volumes:
   qdrant_storage:
+    external: true
   rabbitmq_data:
+

@@ -1,0 +1,298 @@
+[
+  {
+    "id": "cap-01",
+    "type": "direct",
+    "question": "Prometheus 是什么？最早是谁开发的？",
+    "expected": [
+      [
+        "d6fa599f2675",
+        0
+      ]
+    ],
+    "source_doc": "prometheus-overview.md"
+  },
+  {
+    "id": "cap-02",
+    "type": "direct",
+    "question": "Prometheus 里一条时间序列由什么唯一标识？",
+    "expected": [
+      [
+        "fb7154d585bc",
+        1
+      ]
+    ],
+    "source_doc": "prometheus-data_model.md"
+  },
+  {
+    "id": "cap-03",
+    "type": "direct",
+    "question": "Counter 和 Gauge 有什么区别？分别在什么场景用？",
+    "expected": [
+      [
+        "7ed6ee61a470",
+        1
+      ],
+      [
+        "7ed6ee61a470",
+        6
+      ]
+    ],
+    "source_doc": "prometheus-metric_types.md"
+  },
+  {
+    "id": "cap-04",
+    "type": "direct",
+    "question": "PromQL 里 [5m] 是什么意思？区间向量和瞬时向量有什么区别？",
+    "expected": [
+      [
+        "cf1f3bf39e1c",
+        2
+      ],
+      [
+        "cf1f3bf39e1c",
+        18
+      ]
+    ],
+    "source_doc": "prometheus-basics.md"
+  },
+  {
+    "id": "cap-05",
+    "type": "direct",
+    "question": "怎么用 Docker 运行 Prometheus？启动命令是什么？",
+    "expected": [
+      [
+        "fb5f01c786d1",
+        2
+      ]
+    ],
+    "source_doc": "prometheus-installation.md"
+  },
+  {
+    "id": "cap-06",
+    "type": "direct",
+    "question": "Prometheus 启动后默认把数据存在哪里？",
+    "expected": [
+      [
+        "7415ec2a0318",
+        9
+      ]
+    ],
+    "source_doc": "prometheus-gettingstarted.md"
+  },
+  {
+    "id": "cap-07",
+    "type": "direct",
+    "question": "increase() 函数是干嘛的？",
+    "expected": [
+      [
+        "ad3e5756bb7d",
+        29
+      ]
+    ],
+    "source_doc": "prometheus-functions.md"
+  },
+  {
+    "id": "cap-08",
+    "type": "direct",
+    "question": "PromQL 比较运算里 bool 修饰符是干嘛的？",
+    "expected": [
+      [
+        "242d132de7aa",
+        7
+      ],
+      [
+        "242d132de7aa",
+        8
+      ]
+    ],
+    "source_doc": "prometheus-operators.md"
+  },
+  {
+    "id": "cap-09",
+    "type": "direct",
+    "question": "Prometheus 本地存储有什么限制？磁盘坏了数据会怎样？",
+    "expected": [
+      [
+        "b450ea737f6b",
+        6
+      ],
+      [
+        "b450ea737f6b",
+        7
+      ],
+      [
+        "b450ea737f6b",
+        16
+      ],
+      [
+        "b450ea737f6b",
+        17
+      ]
+    ],
+    "source_doc": "prometheus-storage.md"
+  },
+  {
+    "id": "cap-10",
+    "type": "direct",
+    "question": "联邦是干嘛的？",
+    "expected": [
+      [
+        "08a7479d78e9",
+        0
+      ]
+    ],
+    "source_doc": "prometheus-federation.md"
+  },
+  {
+    "id": "cap-11",
+    "type": "direct",
+    "question": "怎么用 HTTP API 查某个时间点的瞬时数据？",
+    "expected": [
+      [
+        "bd1865bda758",
+        6
+      ]
+    ],
+    "source_doc": "prometheus-api.md"
+  },
+  {
+    "id": "cap-12",
+    "type": "direct",
+    "question": "Kubernetes 里匿名请求应该怎么处理？",
+    "expected": [
+      [
+        "d914094929e8",
+        124
+      ]
+    ],
+    "source_doc": "k8s-hardening-guide-zh.pdf"
+  },
+  {
+    "id": "cap-13",
+    "type": "paraphrase",
+    "question": "Prometheus 这个监控工具最早是哪家公司在用的？是谁搞出来的？",
+    "expected": [
+      [
+        "d6fa599f2675",
+        0
+      ]
+    ],
+    "source_doc": "prometheus-overview.md"
+  },
+  {
+    "id": "cap-14",
+    "type": "paraphrase",
+    "question": "监控数据在 Prometheus 里到底长什么样？一条时间序列由什么决定？",
+    "expected": [
+      [
+        "fb7154d585bc",
+        1
+      ]
+    ],
+    "source_doc": "prometheus-data_model.md"
+  },
+  {
+    "id": "cap-15",
+    "type": "paraphrase",
+    "question": "我不想从源码编译，怎么最快把 Prometheus 跑起来？",
+    "expected": [
+      [
+        "fb5f01c786d1",
+        2
+      ]
+    ],
+    "source_doc": "prometheus-installation.md"
+  },
+  {
+    "id": "cap-16",
+    "type": "paraphrase",
+    "question": "Prometheus 单机存数据，机器挂了会怎样？",
+    "expected": [
+      [
+        "b450ea737f6b",
+        6
+      ],
+      [
+        "b450ea737f6b",
+        7
+      ],
+      [
+        "b450ea737f6b",
+        16
+      ],
+      [
+        "b450ea737f6b",
+        17
+      ]
+    ],
+    "source_doc": "prometheus-storage.md"
+  },
+  {
+    "id": "cap-17",
+    "type": "paraphrase",
+    "question": "我想在浏览器里直接查一下 up 指标现在的值，应该调哪个接口？",
+    "expected": [
+      [
+        "bd1865bda758",
+        6
+      ],
+      [
+        "bd1865bda758",
+        7
+      ]
+    ],
+    "source_doc": "prometheus-api.md"
+  },
+  {
+    "id": "cap-18",
+    "type": "paraphrase",
+    "question": "K8s 集群里没带身份的请求，默认能不能访问 API？",
+    "expected": [
+      [
+        "d914094929e8",
+        124
+      ]
+    ],
+    "source_doc": "k8s-hardening-guide-zh.pdf"
+  },
+  {
+    "id": "cap-19",
+    "type": "trap",
+    "question": "Milvus 和 Qdrant 哪个性能更好？",
+    "expected": [],
+    "source_doc": "prometheus-overview.md"
+  },
+  {
+    "id": "cap-20",
+    "type": "trap",
+    "question": "Prometheus 3.0 是哪一年发布的？新功能有哪些？",
+    "expected": [],
+    "source_doc": "prometheus-overview.md"
+  },
+  {
+    "id": "cap-21",
+    "type": "trap",
+    "question": "怎么用 Docker 部署 Qdrant？",
+    "expected": [],
+    "source_doc": "prometheus-installation.md"
+  },
+  {
+    "id": "cap-22",
+    "type": "trap",
+    "question": "RAG 是谁在哪年提出的？",
+    "expected": [],
+    "source_doc": "prometheus-overview.md"
+  },
+  {
+    "id": "cap-23",
+    "type": "direct",
+    "question": "怎么写 PromQL 查某个 job 在 5 分钟内的请求量？",
+    "expected": [
+      [
+        "86c58349e2ee",
+        2
+      ]
+    ],
+    "source_doc": "prometheus-examples.md"
+  }
+]

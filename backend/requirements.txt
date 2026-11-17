@@ -1,0 +1,15 @@
+# 后端依赖（按代码实际 import 的列的，没写版本号，让 pip 自己解）
+fastapi
+uvicorn
+httpx
+pika
+qdrant-client
+python-dotenv
+openai
+pydantic
+pdfplumber
+python-docx
+python-multipart
+# agent_graph.py（第 6 课）用的
+langgraph
+langchain-openai

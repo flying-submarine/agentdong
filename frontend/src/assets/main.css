@@ -1,0 +1,88 @@
+@import "./base.css";
+
+body {
+  display: flex;
+  place-items: center;
+}
+
+#app {
+  margin: 0 auto;
+  font-weight: normal;
+  min-height: calc(100vh - 16px);
+  width: 100%;
+  display: flex;
+}
+
+main {
+  width: 100%;
+  min-height: calc(100vh - 16px);
+}
+
+a,
+.green {
+  text-decoration: none;
+  color: hsla(160, 100%, 37%, 1);
+  transition: 0.4s;
+  padding: 3px;
+}
+
+@media (hover: hover) {
+  a:hover {
+    background-color: hsla(160, 100%, 37%, 0.2);
+  }
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  /* font-size: 18px; */
+  text-align: left;
+}
+
+.markdown-body table th
+/* .markdown-body table td  */
+{
+  /* border: 1px solid #6c757d; */
+  /* background-color: #6c757d; */
+  /* background-color: #f4f4f4; */
+  border-bottom: 1px solid #ccc;
+  padding: 0 0.5rem;
+  background-color: #fff;
+}
+
+.markdown-body table td{
+  padding: 0 0.5rem;
+  border-bottom: 1px solid #ccc;
+}
+
+
+pre {
+  background-color: #f4f4f4;
+  padding: 10px;
+  border-radius: 5px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+li,
+ul,
+p {
+  margin: 0;
+  padding: 0;
+}
+
+code {
+  font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+  background-color: #f4f4f4;
+  color: #000;
+}
+.screen-wrapper {
+  box-shadow: 0 0 10px 10px rgba(14, 66, 210, 0.25);
+}
+
+:focus-visible {
+  outline: none;
+}
+/* 
+::marker {
+  color: transparent;
+} */

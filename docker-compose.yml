@@ -1,0 +1,97 @@
+# agentdong 全栈 compose：Qdrant + RabbitMQ + 三个服务 + worker。
+# 服务之间用服务名互相找（qdrant:6333、rabbitmq:5672），代码里已经改成环境变量，
+# 本地跑默认 localhost，Docker 里由这里的 environment 覆盖。
+# 注意：第一次 up 之前，先把 backend/NEED-FROM-DAY1.md 里的三个文件拷进 backend/，
+# 再把项目根目录的 .env 配好（cp .env.example .env，填两个 key）。
+services:
+  qdrant:
+    image: qdrant/qdrant
+    container_name: agentdong-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: agentdong-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+
+  doc-service:
+    build: ./backend
+    container_name: agentdong-doc
+    command: uvicorn doc_service:app --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY}
+      - NO_PROXY=localhost,127.0.0.1
+      - QDRANT_URL=http://qdrant:6333
+      - RABBITMQ_HOST=rabbitmq
+    volumes:
+      - ./backend/uploads:/app/uploads
+    depends_on:
+      - qdrant
+      - rabbitmq
+    restart: unless-stopped
+
+  retrieval-service:
+    build: ./backend
+    container_name: agentdong-retrieval
+    command: uvicorn retrieval_service:app --host 0.0.0.0 --port 8002
+    ports:
+      - "8002:8002"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY}
+      - NO_PROXY=localhost,127.0.0.1
+      - QDRANT_URL=http://qdrant:6333
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+  agent-service:
+    build: ./backend
+    container_name: agentdong-agent
+    command: uvicorn agent_service:app --host 0.0.0.0 --port 8003
+    ports:
+      - "8003:8003"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY}
+      - NO_PROXY=localhost,127.0.0.1
+      - DOC_URL=http://doc-service:8001
+      - RETRIEVAL_URL=http://retrieval-service:8002
+    depends_on:
+      - doc-service
+      - retrieval-service
+    restart: unless-stopped
+
+  ingest-worker:
+    build: ./backend
+    container_name: agentdong-worker
+    command: python3 ingest_worker.py
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY}
+      - NO_PROXY=localhost,127.0.0.1
+      - QDRANT_URL=http://qdrant:6333
+      - RABBITMQ_HOST=rabbitmq
+      - DOC_URL=http://doc-service:8001
+    depends_on:
+      - qdrant
+      - rabbitmq
+      - doc-service
+    restart: unless-stopped
+
+volumes:
+  qdrant_storage:
+  rabbitmq_data:

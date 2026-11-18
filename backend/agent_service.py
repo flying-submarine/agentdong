@@ -1,7 +1,9 @@
-# 第 9 课第 1 步：Agent 服务（端口 8003）——拥有大模型调用。
+# 第 9 课第 1 步搭的 Agent 服务（端口 8003）——拥有大模型调用。
 # 检索不再是本地函数调用，改成 HTTP 问检索服务（8002）；
 # /ask_tool 里的三个工具也不再是本地函数，改成 HTTP 问文档服务（8001）。
-# /ask_graph 还是走你第 6 课的 agent_graph.py，没动。
+# M3 第 1 步：/ask_graph 改走毕业设计的 capstone_graph.py（第 6 课那张图的 M3 版：
+# 工具只剩 1 个 search_kb，调 8002 的 /vector_search；最多查 2 轮）。
+# /ask、/ask_stream、/ask_tool 都没动。
 import json
 import os  # 读环境变量：服务地址默认 localhost，Docker 里 compose 传服务名
 import httpx
@@ -10,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from rag_core import client, tools
-from agent_graph import run_agent
+from capstone_graph import run_agent  # M3 第 1 步：/ask_graph 走毕业设计的图（原来是第 6 课的 agent_graph.py）
 
 RETRIEVAL_URL = os.environ.get("RETRIEVAL_URL", "http://127.0.0.1:8002")  # 环境变量优先：本地跑默认 localhost，Docker 里 compose 传服务名 retrieval-service
 DOC_URL = os.environ.get("DOC_URL", "http://127.0.0.1:8001")  # 同上，Docker 里是 doc-service:8001
@@ -140,8 +142,8 @@ def ask_tool(req: ToolAskIn):
 @app.post("/ask_graph")
 def ask_graph(req: GraphAskIn):
     try:
-        answer = run_agent(req.question, req.session_id)
-        return {"question": req.question, "session_id": req.session_id, "answer": answer}
+        answer, search_rounds = run_agent(req.question, req.session_id)
+        return {"question": req.question, "session_id": req.session_id, "answer": answer, "search_rounds": search_rounds}
     except Exception as e:
         print("ask_graph 调用失败:", type(e).__name__, e)
-        return {"question": req.question, "session_id": req.session_id, "answer": "外部服务暂时不可用，请稍后重试"}
+        return {"question": req.question, "session_id": req.session_id, "answer": "外部服务暂时不可用，请稍后重试", "search_rounds": 0}

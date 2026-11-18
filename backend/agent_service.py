@@ -3,6 +3,8 @@
 # /ask_tool 里的三个工具也不再是本地函数，改成 HTTP 问文档服务（8001）。
 # M3 第 1 步：/ask_graph 改走毕业设计的 capstone_graph.py（第 6 课那张图的 M3 版：
 # 工具只剩 1 个 search_kb，调 8002 的 /vector_search；最多查 2 轮）。
+# M3 第 2 步：/ask_graph 返回结构化答案（refused / sources / confidence / answer），
+# 拒答由图里的 finalize 节点按分数硬拦（最高分 < 0.5 就 refused）。
 # /ask、/ask_stream、/ask_tool 都没动。
 import json
 import os  # 读环境变量：服务地址默认 localhost，Docker 里 compose 传服务名
@@ -142,8 +144,8 @@ def ask_tool(req: ToolAskIn):
 @app.post("/ask_graph")
 def ask_graph(req: GraphAskIn):
     try:
-        answer, search_rounds = run_agent(req.question, req.session_id)
-        return {"question": req.question, "session_id": req.session_id, "answer": answer, "search_rounds": search_rounds}
+        ans, search_rounds = run_agent(req.question, req.session_id)
+        return {"question": req.question, "session_id": req.session_id, "answer": ans.answer, "refused": ans.refused, "sources": ans.sources, "confidence": ans.confidence, "search_rounds": search_rounds}
     except Exception as e:
         print("ask_graph 调用失败:", type(e).__name__, e)
-        return {"question": req.question, "session_id": req.session_id, "answer": "外部服务暂时不可用，请稍后重试", "search_rounds": 0}
+        return {"question": req.question, "session_id": req.session_id, "answer": "外部服务暂时不可用，请稍后重试", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": 0}

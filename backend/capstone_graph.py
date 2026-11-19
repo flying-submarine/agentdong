@@ -6,6 +6,11 @@
 #   这就是 m3s3-clean 里 CNCF 追问被拒的根因：不是检索不行，是第二轮根本没查。
 #   直接调 8002 验证过：显式问 0.9839、代词问 0.9612，都过 0.5 线；新会话显式问 1 轮就答对。
 # 8001、8002 不动；不用装新包.
+# M3 第 4 步（人工确认 HITL）：加 delete_doc 工具 + gate 关卡节点。
+# 查和问不停，只在"要动手改库"时停下来等点头：模型想删文档，gate 节点调 interrupt() 把图冻住，
+# 人从 /ask_graph/confirm 回 approved 再续上；点了否就取消，文档还在。
+# 删完不走查问题的收尾节点（删完 best_score 还是 0，走 finalize 会被错当成"没查到"拒答），
+# 改走 delete_done 节点直接回删除结果。8001 要加一个 DELETE /doc/{doc_id} 接口（删文档的活归 8001）。
 
 # 引用的包（每个包是干嘛的）：
 import os  # 读环境变量：DeepSeek key 和检索服务地址
@@ -20,19 +25,44 @@ from langgraph.graph import StateGraph, START, END  # 建图：节点 + 边
 from langgraph.graph.message import add_messages  # messages 字段的累加规则：新消息追加，不覆盖旧的
 from langgraph.prebuilt import ToolNode, tools_condition  # ToolNode：执行工具的节点；tools_condition：模型调了工具就走 tools 节点，否则走收尾
 from langgraph.checkpoint.memory import MemorySaver  # 内存存档：按 thread_id 存对话历史
+from langgraph.types import interrupt, Command  # interrupt：把图冻住等点头；Command：节点里动态指定下一步去哪、续上时把人的决定带回来（要 langgraph >= 0.2.28）
 
 RETRIEVAL_URL = os.environ.get("RETRIEVAL_URL", "http://127.0.0.1:8002")  # 环境变量优先：本地跑默认 8002，Docker 里 compose 传服务名
+DOC_URL = os.environ.get("DOC_URL", "http://127.0.0.1:8001")  # 文档服务地址：delete_doc 工具调 8001 的 DELETE /doc/{doc_id} 删文档（删库的活归 8001，8003 不直连 Qdrant）
 MAX_SEARCH_ROUNDS = 2  # 最多查几轮：超过就强制回答，不再查
 TOP_K = 3  # 每轮查回几块
 REFUSAL_THRESHOLD = 0.5  # 拒答线：精排最高分低于它就 refused（M2 评测用的同一条线）
 
 # 系统指令（查的循环用）：每次调模型都在消息前面加上它（不存进历史，只当次生效）。
-SYSTEM_PROMPT = (
-    "你是企业运维知识库的问答助手。你只有一个工具 search_kb，用来查知识库。\n"
-    "工作流程：先用 search_kb 查一次，看查回来的块够不够回答问题。\n"
-    "不够就换个问法再查一轮（最多查 2 轮）；够了就等收尾节点出结构化答案。\n"
-    "回答规则：只根据查到的块回答，块里没有答案也不要编造，交给收尾节点判 refused。"
-)
+SYSTEM_PROMPT = """你是企业运维知识库的问答助手。你有两个工具：
+- search_kb(query)：查知识库，返回相关文档块
+- delete_doc(doc_id)：删除一篇文档（不可逆操作）
+
+## 问答流程
+1. 首轮检索：用用户的原始问题【原样】调用 search_kb，不做改写、不做同义替换。
+   首轮优先保证与原问题字面一致，实测原问题召回效果最好。
+2. 判断充分性：检查检索块是否同时满足以下两点——
+   (a) 至少有一个块与问题的核心实体 / 主题直接相关；
+   (b) 内容覆盖问题真正要问的关键点，而不只是字面命中了个别词。
+   满足则停止检索，等待收尾节点产出结构化答案。
+3. 补充检索（可选，最多一次）：若判断不充分，用改写后的问题再查一次。
+   改写规则：保留原问题中的专有名词、编号、代码、数字原样；
+   只补充同义词、上位词或更完整的问法，不改变原意；不要凭空引入新实体。
+   两轮结果合并判断，仍不充分就停止，交收尾节点按规则处理。
+   整个问答过程最多检索 2 轮。
+
+## 删除流程
+仅当用户明确要求删除某篇文档时才执行，其余情况一律不删。
+步骤：
+1. 先用 search_kb 定位目标文档，从返回块中取得准确的 doc_id —— 不要猜测或编造。
+2. 确认 doc_id 后再调用 delete_doc(doc_id)。
+3. 调用后立即停止：删除前系统会暂停等待人工确认，你不需要、也不要自行宣布删除成功。
+
+## 回答边界
+- 只依据检索到的块作答，不得编造块中没有的内容。
+- 检索结果不足以回答时不要强行作答，交收尾节点判 refused。
+- 你只负责检索与调用工具；最终答案和 refused 判定由收尾节点给出。
+"""
 
 # 收尾用的系统指令（结构化输出用）：只输出 JSON，不输出别的文字。
 JSON_SYSTEM_PROMPT = (
@@ -111,7 +141,8 @@ class RagAnswer(BaseModel):
 @langchain_tool
 def search_kb(query: str) -> str:
     """在运维知识库里检索相关内容。输入一个查询问题，返回最相关的 3 个文档块。
-    如果返回的块答不上用户的问题，换个问法再调一次这个工具（最多 2 轮）。"""
+    第一轮用用户原问题原样查，不要换说法；如果返回的块答不上用户的问题，第二轮再换个问法调一次这个工具（最多 2 轮）。"""
+    print(f"[search_kb] 查：{query!r}")  # 打到 8003 终端：看得见 Agent 每轮到底拿什么词去查的，第一轮是不是原问题原样
     try:
         resp = httpx.post(
             RETRIEVAL_URL + "/vector_search",
@@ -133,6 +164,23 @@ def search_kb(query: str) -> str:
     return "\n\n".join(lines)
 
 
+@langchain_tool
+def delete_doc(doc_id: str) -> str:
+    """从知识库里删掉一篇文档。输入文档号 doc_id，删掉这篇文档的所有块。
+    只在用户明确说要删某篇文档时才调；调之前先用 search_kb 查到这篇文档的 doc_id，不要猜。
+    注意：删了找不回来，图会在真的删之前停下来等人点头（gate 节点），不是调了就删。"""
+    try:
+        resp = httpx.delete(DOC_URL + f"/doc/{doc_id}", timeout=30.0)  # 删库的活归 8001：调它的 DELETE /doc/{doc_id}
+        resp.raise_for_status()
+    except Exception as e:  # 8001 没起、超时、报错：不抛异常，返回一句话，文档还在
+        return f"删除请求失败（{type(e).__name__}），文档还在，请稍后再试。"
+    data = resp.json()
+    n = data.get("deleted", 0)
+    if n == 0:
+        return f"文档 {doc_id} 在库里没有找到块，没删掉任何东西。"
+    return f"已删除文档 {doc_id}，共 {n} 块。"
+
+
 class GraphState(TypedDict):
     # 图的状态：messages 是消息列表（新消息追加，旧的不覆盖——记忆就是这么来的）；
     # best_score 是本轮查到的最高精排分（只升不降），收尾节点拿它判拒答。
@@ -146,7 +194,7 @@ llm = ChatOpenAI(
     api_key=os.environ.get("DEEPSEEK_API_KEY"),
     temperature=0,
 )
-llm_with_tools = llm.bind_tools([search_kb])  # 绑上工具的模型：能决定调不调 search_kb
+llm_with_tools = llm.bind_tools([search_kb, delete_doc])  # 绑上两个工具的模型：能决定调 search_kb 查，还是调 delete_doc 删
 llm_json = ChatOpenAI(
     model="deepseek-flash",
     base_url="https://api.deepseek.com",
@@ -216,28 +264,99 @@ def finalize_node(state: GraphState):
     return {"messages": [AIMessage(content=ans.model_dump_json())]}
 
 
+def gate_node(state: GraphState):
+    """确认关卡：模型想调工具时先过这里。只查（search_kb）直接放行去 tools 节点；
+    要删（delete_doc）就停下来等点头——interrupt() 会把图冻住，等人从 /ask_graph/confirm
+    回 approved 再续上（中途断开也没事，MemorySaver 存着冻住的状态，续上就继续走）。
+    点了否就直接结束，回一条"已取消删除"的结构化答案；点了是就放行去 tools 节点。"""
+    doc_id = None
+    for m in reversed(state["messages"]):  # 从后往前找最近一条带 tool_calls 的 AI 消息
+        if isinstance(m, AIMessage):
+            calls = getattr(m, "tool_calls", None) or []
+            for tc in calls:
+                if tc.get("name") == "delete_doc":
+                    doc_id = (tc.get("args") or {}).get("doc_id")
+            break
+    if doc_id is None:
+        return Command(goto="tools")  # 没要删的，直接放行
+    approved = interrupt({"action": "delete_doc", "doc_id": doc_id, "message": f"确定要删除文档 {doc_id} 吗？删了就找不回来，这篇文档的所有块都会删掉。"})
+    if not approved:
+        ans = RagAnswer(refused=True, answer="已取消删除，文档还在。", sources=[], confidence=0.0)
+        return Command(goto=END, update={"messages": [AIMessage(content=ans.model_dump_json())]})
+    return Command(goto="tools")
+
+
+def after_tools(state: GraphState):
+    """工具跑完分流：刚删过文档就去删完收尾；只是查了就去读分、继续循环。
+    看最近一条 AI 消息调了什么工具：有 delete_doc 就走 delete_done，否则走 score。"""
+    for m in reversed(state["messages"]):
+        if isinstance(m, AIMessage):
+            calls = getattr(m, "tool_calls", None) or []
+            if any(tc.get("name") == "delete_doc" for tc in calls):
+                return "delete_done"
+            return "score"
+    return "score"
+
+
+def delete_done_node(state: GraphState):
+    """删完收尾：工具已经删掉了，直接把工具的结果包成结构化答案返回。
+    不走查问题的收尾节点——删完 best_score 还是 0，走 finalize 会被错当成"没查到"拒答，那就错了。"""
+    text = ""
+    for m in reversed(state["messages"]):
+        if isinstance(m, ToolMessage):
+            text = m.content
+            break
+    ans = RagAnswer(refused=False, answer=text or "删除完成。", sources=[], confidence=1.0)
+    return {"messages": [AIMessage(content=ans.model_dump_json())]}
+
+
 builder = StateGraph(GraphState)
 builder.add_node("model", model_node)
-builder.add_node("tools", ToolNode([search_kb]))
+builder.add_node("gate", gate_node)
+builder.add_node("tools", ToolNode([search_kb, delete_doc]))
 builder.add_node("score", score_node)
 builder.add_node("finalize", finalize_node)
+builder.add_node("delete_done", delete_done_node)
 builder.add_edge(START, "model")
-builder.add_conditional_edges("model", tools_condition, {"tools": "tools", "__end__": "finalize"})  # 模型调了工具 → tools；没调 → 收尾
-builder.add_edge("tools", "score")
+builder.add_conditional_edges("model", tools_condition, {"tools": "gate", "__end__": "finalize"})  # 模型调了工具 → 先过确认关卡；没调 → 收尾
+builder.add_conditional_edges("tools", after_tools, {"delete_done": "delete_done", "score": "score"})  # 刚删过文档 → 删完收尾；只是查了 → 读分继续循环
 builder.add_edge("score", "model")
 builder.add_edge("finalize", END)
+builder.add_edge("delete_done", END)
 # 只编译一次，放在模块层：每次请求都重新 compile 会连 MemorySaver 一起重建，记忆就丢了（第 6 课的坑）。
 graph_app = builder.compile(checkpointer=MemorySaver())
 
 
 def run_agent(question: str, thread_id: str = "default"):
-    """跑一轮问答：返回 (RagAnswer, 本轮查了几轮)。thread_id 相同就是同一轮对话，记得住上文。
+    """跑一轮问答：返回 (RagAnswer 或 None, 本轮查了几轮, 等待确认的信息或 None)。
+    thread_id 相同就是同一轮对话，记得住上文。
     best_score 每问一次重新算（invoke 里传 0.0 盖掉上一轮的），不然上一轮的高分会让这轮的陷阱题蒙混过关。
-    查了几轮现在也是本轮的数（count_searches 只数最后一条 HumanMessage 之后），不是整个 thread 的累计。"""
+    查了几轮现在也是本轮的数（count_searches 只数最后一条 HumanMessage 之后），不是整个 thread 的累计。
+    注意：图在确认关卡冻住时，invoke 返回的状态里有 __interrupt__，这时还没有最终答案，
+    不能按 RagAnswer 去解析最后一条消息（那条是带 tool_calls 的 AI 消息，不是 JSON）——先返回等待确认。
+    recursion_limit 从 10 提到 15：多了 gate 关卡节点，两轮问答要走 10 步，留点余量。"""
     result = graph_app.invoke(
         {"messages": [HumanMessage(question)], "best_score": 0.0},
-        {"configurable": {"thread_id": thread_id}, "recursion_limit": 10},
+        {"configurable": {"thread_id": thread_id}, "recursion_limit": 15},
     )
     rounds = count_searches(result["messages"])
+    interrupts = result.get("__interrupt__")
+    if interrupts:
+        return None, rounds, interrupts[0].value
     ans = RagAnswer.model_validate_json(result["messages"][-1].content)
-    return ans, rounds
+    return ans, rounds, None
+
+
+def resume_agent(thread_id: str, approved: bool):
+    """人点了头（或点了否）之后续上被冻住的图：返回和 run_agent 一样的三件套。
+    approved=True 放行去删，False 取消。一次删除最多停一次，续上之后不会再停。"""
+    result = graph_app.invoke(
+        Command(resume=approved),
+        {"configurable": {"thread_id": thread_id}, "recursion_limit": 15},
+    )
+    rounds = count_searches(result["messages"])
+    interrupts = result.get("__interrupt__")
+    if interrupts:
+        return None, rounds, interrupts[0].value
+    ans = RagAnswer.model_validate_json(result["messages"][-1].content)
+    return ans, rounds, None

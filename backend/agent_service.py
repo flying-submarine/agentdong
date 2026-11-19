@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from rag_core import client, tools
-from capstone_graph import run_agent  # M3 第 1 步：/ask_graph 走毕业设计的图（原来是第 6 课的 agent_graph.py）
+from capstone_graph import run_agent, resume_agent  # M3 第 1 步：/ask_graph 走毕业设计的图（原来是第 6 课的 agent_graph.py）；M3 第 4 步：resume_agent 续上被确认关卡冻住的图
 
 RETRIEVAL_URL = os.environ.get("RETRIEVAL_URL", "http://127.0.0.1:8002")  # 环境变量优先：本地跑默认 localhost，Docker 里 compose 传服务名 retrieval-service
 DOC_URL = os.environ.get("DOC_URL", "http://127.0.0.1:8001")  # 同上，Docker 里是 doc-service:8001
@@ -36,6 +36,12 @@ class ToolAskIn(BaseModel):
 class GraphAskIn(BaseModel):
     question: str
     session_id: str = "default"
+
+class GraphConfirmIn(BaseModel):
+    # M3 第 4 步：人确认删不删。session_id 必须和当时问的那次一样（图是按 thread_id 冻住的），
+    # approved=True 放行去删，False 取消，文档还在。
+    session_id: str = "default"
+    approved: bool
 
 def retrieve(q, top_k=3):
     r = httpx.post(
@@ -144,8 +150,26 @@ def ask_tool(req: ToolAskIn):
 @app.post("/ask_graph")
 def ask_graph(req: GraphAskIn):
     try:
-        ans, search_rounds = run_agent(req.question, req.session_id)
-        return {"question": req.question, "session_id": req.session_id, "answer": ans.answer, "refused": ans.refused, "sources": ans.sources, "confidence": ans.confidence, "search_rounds": search_rounds}
+        ans, search_rounds, waiting = run_agent(req.question, req.session_id)
+        if waiting is not None:
+            # 图冻在确认关卡了：还没答案，先把要删的文档号告诉人，等 /ask_graph/confirm 回话。
+            return {"question": req.question, "session_id": req.session_id, "status": "waiting_confirm", "confirm": waiting, "answer": "", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": search_rounds}
+        return {"question": req.question, "session_id": req.session_id, "status": "done", "answer": ans.answer, "refused": ans.refused, "sources": ans.sources, "confidence": ans.confidence, "search_rounds": search_rounds}
     except Exception as e:
         print("ask_graph 调用失败:", type(e).__name__, e)
-        return {"question": req.question, "session_id": req.session_id, "answer": "外部服务暂时不可用，请稍后重试", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": 0}
+        return {"question": req.question, "session_id": req.session_id, "status": "done", "answer": "外部服务暂时不可用，请稍后重试", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": 0}
+
+@app.post("/ask_graph/confirm")
+def confirm_graph(req: GraphConfirmIn):
+    # M3 第 4 步：续上冻住的图。approved=True 放行去删，False 取消。
+    # 每次 curl 都是一个新连接，所以"隔一会儿再确认"本身就是断开再续上的验证——冻住的状态存在 MemorySaver 里，8003 不重启就一直在。
+    try:
+        ans, search_rounds, waiting = resume_agent(req.session_id, req.approved)
+        if waiting is not None:
+            return {"session_id": req.session_id, "status": "waiting_confirm", "confirm": waiting, "answer": "", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": search_rounds}
+        if ans is None:
+            return {"session_id": req.session_id, "status": "done", "answer": "确认流程异常，请重试", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": search_rounds}
+        return {"session_id": req.session_id, "status": "done", "answer": ans.answer, "refused": ans.refused, "sources": ans.sources, "confidence": ans.confidence, "search_rounds": search_rounds}
+    except Exception as e:
+        print("ask_graph/confirm 调用失败:", type(e).__name__, e)
+        return {"session_id": req.session_id, "status": "done", "answer": "外部服务暂时不可用，请稍后重试", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": 0}

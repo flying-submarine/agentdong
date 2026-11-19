@@ -1,7 +1,7 @@
 # 第 9 课第 1 步搭的 Agent 服务（端口 8003）——拥有大模型调用。
 # 检索不再是本地函数调用，改成 HTTP 问检索服务（8002）；
 # /ask_tool 里的三个工具也不再是本地函数，改成 HTTP 问文档服务（8001）。
-# M3 第 1 步：/ask_graph 改走毕业设计的 capstone_graph.py（第 6 课那张图的 M3 版：
+# M3 第 1 步：/ask_graph 改走工作项目的 capstone_graph.py（第 6 课那张图的 M3 版：
 # 工具只剩 1 个 search_kb，调 8002 的 /vector_search；最多查 2 轮）。
 # M3 第 2 步：/ask_graph 返回结构化答案（refused / sources / confidence / answer），
 # 拒答由图里的 finalize 节点按分数硬拦（最高分 < 0.5 就 refused）。
@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from rag_core import client, tools
-from capstone_graph import run_agent, resume_agent  # M3 第 1 步：/ask_graph 走毕业设计的图（原来是第 6 课的 agent_graph.py）；M3 第 4 步：resume_agent 续上被确认关卡冻住的图
+from capstone_graph import run_agent, resume_agent  # M3 第 1 步：/ask_graph 走工作项目的图（原来是第 6 课的 agent_graph.py）；M3 第 4 步：resume_agent 续上被确认关卡冻住的图
 
 RETRIEVAL_URL = os.environ.get("RETRIEVAL_URL", "http://127.0.0.1:8002")  # 环境变量优先：本地跑默认 localhost，Docker 里 compose 传服务名 retrieval-service
 DOC_URL = os.environ.get("DOC_URL", "http://127.0.0.1:8001")  # 同上，Docker 里是 doc-service:8001
@@ -36,6 +36,7 @@ class ToolAskIn(BaseModel):
 class GraphAskIn(BaseModel):
     question: str
     session_id: str = "default"
+    role: str | None = None  # 调用方角色（比如 "运维"）：只返回这个角色看得见的块；不给就只看公开的
 
 class GraphConfirmIn(BaseModel):
     # M3 第 4 步：人确认删不删。session_id 必须和当时问的那次一样（图是按 thread_id 冻住的），
@@ -150,11 +151,11 @@ def ask_tool(req: ToolAskIn):
 @app.post("/ask_graph")
 def ask_graph(req: GraphAskIn):
     try:
-        ans, search_rounds, waiting = run_agent(req.question, req.session_id)
+        ans, search_rounds, waiting = run_agent(req.question, req.session_id, req.role)
         if waiting is not None:
             # 图冻在确认关卡了：还没答案，先把要删的文档号告诉人，等 /ask_graph/confirm 回话。
-            return {"question": req.question, "session_id": req.session_id, "status": "waiting_confirm", "confirm": waiting, "answer": "", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": search_rounds}
-        return {"question": req.question, "session_id": req.session_id, "status": "done", "answer": ans.answer, "refused": ans.refused, "sources": ans.sources, "confidence": ans.confidence, "search_rounds": search_rounds}
+            return {"question": req.question, "session_id": req.session_id, "status": "waiting_confirm", "confirm": waiting, "answer": "", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": search_rounds, "role": req.role}
+        return {"question": req.question, "session_id": req.session_id, "status": "done", "answer": ans.answer, "refused": ans.refused, "sources": ans.sources, "confidence": ans.confidence, "search_rounds": search_rounds, "role": req.role}
     except Exception as e:
         print("ask_graph 调用失败:", type(e).__name__, e)
         return {"question": req.question, "session_id": req.session_id, "status": "done", "answer": "外部服务暂时不可用，请稍后重试", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": 0}

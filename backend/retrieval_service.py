@@ -1,4 +1,4 @@
-# 毕业设计 M2：检索服务（端口 8002）——/vector_search 改成混合检索 + 查询重写。
+# 工作项目 M2：检索服务（端口 8002）——/vector_search 改成混合检索 + 查询重写。
 # 和 M1 比只改 /vector_search 这一路，其他接口（/search 关键词、/health）没动。
 # 新流程：问题先过 DeepSeek 改写（补全省略、展开术语）→ 向量取 10 个 + BM25 取 10 个
 # → RRF 按排名合并取前 5 → 精排取前 3 返回。
@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
+from qdrant_client.models import Distance, Filter, FieldCondition, MatchAny, VectorParams  # Filter/FieldCondition/MatchAny：按 payload 条件过滤（权限隔离用）
 from rank_bm25 import BM25Okapi  # BM25 关键词检索：按词频 + 逆文档频率给块打分
 from rag_core import client, embed, search, chunks  # client：第 4 课的 DeepSeek 客户端（查询重写用）；embed：问题变向量；search/chunks：/search 关键词接口复用
 
@@ -57,10 +57,23 @@ def rrf(rank, k=60):
     # 注意 rank 从 0 起：第 1 名是 1/(60+0)=1/60。
     return 1 / (k + rank)
 
-def load_all_chunks():
-    # 从 Qdrant 把全部块拉回来（只要 payload，不要向量——1024 个数没用还占流量）。
+def visible_filter(role: str | None):
+    # 权限过滤器：看得见的块 = 没打标签的老文档（公开）+ 标签里有这个角色的。
+    # role 没给（None）= 只看公开的——默认拒绝，不是不设防；MCP 和老接口不传角色时也只看到公开文档。
+    # is_empty 指 payload 里没这个字段（老文档都没打标签）；MatchAny 指标签列表里有这个角色。
+    if role is None:
+        return Filter(must=[FieldCondition(key="allowed_roles", is_empty=True)])
+    return Filter(should=[
+        FieldCondition(key="allowed_roles", match=MatchAny(any=[role])),
+        FieldCondition(key="allowed_roles", is_empty=True),
+    ])
+
+
+def load_all_chunks(role: str | None = None):
+    # 从 Qdrant 把这个角色看得见的块拉回来（只要 payload，不要向量——1024 个数没用还占流量）。
     # 返回 [{'point_id', 'doc_id', 'chunk_id', 'text'}]，顺序就是 BM25 和 RRF 共用的下标。
-    points, _ = qclient.scroll(COLLECTION, limit=1000, with_payload=True, with_vectors=False)
+    # 过滤在 Qdrant 那层做（scroll_filter），BM25 建索引时就只有看得见的块。
+    points, _ = qclient.scroll(COLLECTION, limit=1000, with_payload=True, with_vectors=False, scroll_filter=visible_filter(role))
     out = []
     for p in points:
         payload = p.payload or {}
@@ -107,14 +120,16 @@ def rerank(query, candidate_idx, chunk_list, top_n=3):
     except Exception:
         return None
 
-def hybrid_retrieve(effective_q, chunk_list):
+def hybrid_retrieve(effective_q, chunk_list, role: str | None = None):
     # 混合检索核心：向量一路 + BM25 一路 → RRF 合并 → 精排。
     # 返回 (results, reranked)：results 是 [(块下标, 分数)]，reranked 说精排有没有成功跑起来。
+    # role 传进来后，向量那路也在 Qdrant 层加过滤（query_filter），只返回看得见的点；
+    # BM25 那路不用再滤——chunk_list 本来就是按角色拉回来的。
     id_to_idx = {c["point_id"]: i for i, c in enumerate(chunk_list)}
     # 向量一路：问题变向量，问 Qdrant 要最像的 10 个，映射成块下标。
     qv = embed(effective_q)
     vec_idx = []
-    for h in qclient.query_points(COLLECTION, query=qv, limit=VECTOR_TOP_K).points:
+    for h in qclient.query_points(COLLECTION, query=qv, limit=VECTOR_TOP_K, query_filter=visible_filter(role)).points:
         if str(h.id) in id_to_idx:
             vec_idx.append(id_to_idx[str(h.id)])
     # BM25 一路：全文先 jieba 切词建索引，问题也切词，取分数最高的 10 个块下标。
@@ -139,16 +154,17 @@ class VectorSearchIn(BaseModel):
     q: str = "RAG 是什么"
     top_k: int = 3
     rewrite: bool = True  # 要不要先查询重写；评测对比时可以关掉它，只比混合检索本身
+    role: str | None = None  # 调用方角色（比如 "运维"）：只返回这个角色看得见的块；不给就只看公开的
 
 @app.post("/vector_search")
 def do_vector_search(req: VectorSearchIn):
     # 新版 /vector_search：先改写问题（可关），再混合检索，返回前 3 块；改写路分数低时用原查询兜底一次。
     # 响应里同时给原问题、改写后的问题、精排是否成功、兜底有没有用上——调问题时看得见每一步。
     rewritten = rewrite_query(req.q) if req.rewrite else req.q
-    chunk_list = load_all_chunks()
+    chunk_list = load_all_chunks(req.role)
     if not chunk_list:
-        return {"query": req.q, "rewritten_query": rewritten, "reranked": False, "fallback_used": False, "results": []}
-    ranked, reranked = hybrid_retrieve(rewritten, chunk_list)
+        return {"query": req.q, "rewritten_query": rewritten, "reranked": False, "fallback_used": False, "role": req.role, "results": []}
+    ranked, reranked = hybrid_retrieve(rewritten, chunk_list, req.role)
     fallback_used = False
     # 兜底：只有同时满足这四个条件才多查一次——
     # [1] 开了改写（req.rewrite），[2] 改写真的改动了问题（rewritten != 原问题，否则再查一次是重复劳动），
@@ -157,7 +173,7 @@ def do_vector_search(req: VectorSearchIn):
     # 满足就用原查询再跑一次混合检索，两路比最高分，分高的赢；原句路赢了才换结果、标 fallback_used=true。
     # 块列表 chunk_list 两路共用一次，不用重新拉；多花的只是一次向量化 + 一次精排。
     if req.rewrite and rewritten != req.q and reranked and ranked and ranked[0][1] < FALLBACK_THRESHOLD:
-        ranked_orig, reranked_orig = hybrid_retrieve(req.q, chunk_list)
+        ranked_orig, reranked_orig = hybrid_retrieve(req.q, chunk_list, req.role)
         if reranked_orig and ranked_orig and ranked_orig[0][1] > ranked[0][1]:
             ranked, reranked = ranked_orig, reranked_orig
             fallback_used = True
@@ -170,7 +186,7 @@ def do_vector_search(req: VectorSearchIn):
             "score": score,
             "text": c["text"].strip(),
         })
-    return {"query": req.q, "rewritten_query": rewritten, "reranked": reranked, "fallback_used": fallback_used, "results": results}
+    return {"query": req.q, "rewritten_query": rewritten, "reranked": reranked, "fallback_used": fallback_used, "role": req.role, "results": results}
 
 @app.get("/search")
 def do_search(q: str = "RAG", top_k: int = 3):

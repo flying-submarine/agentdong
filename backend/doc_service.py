@@ -1,4 +1,4 @@
-# M1：文档服务（端口 8001）——在第 9 课第 3 步的基础上加文件上传。
+# 工作项目 M1：文档服务（端口 8001）——在第 9 课第 3 步的基础上加文件上传。
 # 新增：POST /upload，接收前端传来的文件（PDF / Word / Markdown / 纯文本），
 # 落盘 → 按格式解析成文本 → 和 /ingest 走同一条路（doc_id 按内容算、发 MQ、worker 入库）。
 # worker 不用改：/upload 发的消息和 /ingest 一模一样（{task_id, doc_id, text}），
@@ -80,7 +80,8 @@ def load_task(task_id):
         return None
     return {"status": row[0], "chars": row[1], "chunks": row[2], "error": row[3]}
 
-def publish_ingest(task_id: str, doc_id: str, text: str):
+def publish_ingest(task_id: str, doc_id: str, text: str, roles=None):
+    # roles：这篇文档能给哪些角色看，比如 ["运维"]；不给就是公开，谁都能查（老文档都这样）。
     # 把入库任务发进 RabbitMQ 队列。发之前先把死信拓扑声明好（交换机、死信队列、绑定、主队列），
     # 声明和 worker 那边必须一模一样，否则 RabbitMQ 报 406。
     # 每调一次就新开一个连接，用完就关——写法笨，本课够用。
@@ -99,7 +100,7 @@ def publish_ingest(task_id: str, doc_id: str, text: str):
         channel.basic_publish(
             exchange="",
             routing_key=QUEUE,
-            body=json.dumps({"task_id": task_id, "doc_id": doc_id, "text": text}, ensure_ascii=False),
+            body=json.dumps({"task_id": task_id, "doc_id": doc_id, "text": text, "roles": roles}, ensure_ascii=False),
             # delivery_mode=2：消息持久化，RabbitMQ 重启也不丢。
             properties=pika.BasicProperties(delivery_mode=2),
         )
@@ -140,8 +141,9 @@ def parse_file(path: str, filename: str) -> str:
     raise ValueError(f"不支持的文件格式：{ext}，只支持 pdf / docx / md / txt")
 
 class IngestIn(BaseModel):
-    # /ingest 的请求体：只收一个 text 字段（要入库的文档全文）。
+    # /ingest 的请求体：text 是要入库的文档全文；roles 是这篇能给哪些角色看（比如 ["运维"]），不给就是公开。
     text: str
+    roles: list[str] | None = None
 
 class TaskDoneIn(BaseModel):
     # /task/{task_id}/done 的请求体：worker 做完后回告入库了几块。
@@ -158,7 +160,7 @@ def ingest(req: IngestIn):
     task_id = uuid.uuid4().hex[:12]
     doc_id = hashlib.sha256(req.text.encode("utf-8")).hexdigest()[:12]
     save_task(task_id, "processing", len(req.text))
-    publish_ingest(task_id, doc_id, req.text)
+    publish_ingest(task_id, doc_id, req.text, req.roles)
     return {"task_id": task_id, "doc_id": doc_id, "status": "processing", "message": "已收到，正在后台处理", "chars": len(req.text)}
 
 @app.post("/upload")

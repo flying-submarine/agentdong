@@ -46,12 +46,19 @@ def point_id(doc_id: str, chunk_index: int):
     # 按“文档 id + 块号”算出点的 id。uuid5 是确定性的：同样的输入永远算出同样的 UUID——这就是幂等的关键。
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_id}:{chunk_index}"))
 
-def handle(doc_id, text):
+def handle(doc_id, text, roles=None):
     # 处理一条入库任务：切块 → 批量算向量 → 写进 Qdrant。返回入库了几块。
+    # roles 写进 payload 的 allowed_roles：有标签只给标签里的角色看；没给就不写这个字段，老文档默认公开。
     chunks = chunk_text(text)
     vectors = embed_batch(chunks)
+    payloads = []
+    for i in range(len(chunks)):
+        payload = {"doc_id": doc_id, "chunk_id": i, "text": chunks[i]}
+        if roles:
+            payload["allowed_roles"] = list(roles)
+        payloads.append(payload)
     points = [
-        PointStruct(id=point_id(doc_id, i), vector=vectors[i], payload={"doc_id": doc_id, "chunk_id": i, "text": chunks[i]})
+        PointStruct(id=point_id(doc_id, i), vector=vectors[i], payload=payloads[i])
         for i in range(len(chunks))
     ]
     qclient.upsert(COLLECTION, points)
@@ -94,7 +101,7 @@ def callback(ch, method, properties, body):
     task_id = task.get("task_id", "unknown")
     doc_id = task.get("doc_id", task_id)
     try:
-        n = handle(doc_id, task["text"])
+        n = handle(doc_id, task["text"], task.get("roles"))
         report_done(task_id, n)
         ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception as e:

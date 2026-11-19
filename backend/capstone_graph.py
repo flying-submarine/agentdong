@@ -1,4 +1,4 @@
-# M3 第 3 步修复版：结构化输出 + 拒答阈值 + 记忆（端口 8003 的 /ask_graph 用这张图）。
+# 工作项目 M3 第 3 步修复版：结构化输出 + 拒答阈值 + 记忆（端口 8003 的 /ask_graph 用这张图）。
 # 在第 2 步的图上只改了一处：
 #   count_searches 只数【本轮】的 search_kb 调用，不数整个 thread 的累计次数。
 #   旧版 bug：第一轮用了 2 轮，第二轮一开始 count 就已经是 2，模型节点直接改用不绑工具的模型，
@@ -16,6 +16,7 @@
 import os  # 读环境变量：DeepSeek key 和检索服务地址
 import re  # 正则：从工具结果里抠出"分数 0.9487"这样的数字
 import httpx  # 发 HTTP 请求：调 8002 的 /vector_search
+from contextvars import ContextVar  # 请求级变量：角色跟着这次请求走，工具里能读到，不同请求之间不串
 from typing import Annotated, TypedDict  # TypedDict：定义图的状态结构；Annotated：给 messages 加累加规则
 from pydantic import BaseModel, ConfigDict, Field, field_validator  # 定义 RagAnswer 结构 + 进来先归一化的校验器
 from langchain_openai import ChatOpenAI  # 调 DeepSeek 的 LangChain 客户端（第 6 课同款）
@@ -116,7 +117,7 @@ def _to_source_id(v):
 class RagAnswer(BaseModel):
     """模型必须按这个结构回答案（第 8 课的 RagAnswer，改了一处：
     sources 从块号数字改成 "文档 id:块号" 字符串——第 8 课是单文档，块号就够；
-    毕业设计 13 篇文档，只给块号会撞，分不清是哪篇的。
+    工作项目 13 篇文档，只给块号会撞，分不清是哪篇的。
     answer/sources/confidence 都给了默认值——拒绝回答时它们本来就没意义；
     多余字段直接丢掉；confidence 和 sources 进来先归一化再校验。"""
     model_config = ConfigDict(extra="ignore")
@@ -139,15 +140,22 @@ class RagAnswer(BaseModel):
         return v
 
 
+# 本次问答的调用方角色（比如 "运维"）：run_agent 在 invoke 之前设定，search_kb 里读出来传给 8002，问完清空。
+# 不走模型、不走提示词——模型只传查询词，角色它碰不到、改不了；不同请求之间不会串（各管各的上下文）。
+# 默认 None = 公开：没传角色只看没打标签的文档，宁可少看，不多看。
+_current_role: ContextVar[str | None] = ContextVar("current_role", default=None)
+
+
 @langchain_tool
 def search_kb(query: str) -> str:
     """在运维知识库里检索相关内容。输入一个查询问题，返回最相关的 3 个文档块。
     第一轮用用户原问题原样查，不要换说法；如果返回的块答不上用户的问题，第二轮再换个问法调一次这个工具（最多 2 轮）。"""
-    print(f"[search_kb] 查：{query!r}")  # 打到 8003 终端：看得见 Agent 每轮到底拿什么词去查的，第一轮是不是原问题原样
+    role = _current_role.get()
+    print(f"[search_kb] 查：{query!r} 角色={role if role else '公开'}")  # 打到 8003 终端：看得见 Agent 每轮到底拿什么词去查的，第一轮是不是原问题原样
     try:
         resp = httpx.post(
             RETRIEVAL_URL + "/vector_search",
-            json={"q": query, "top_k": TOP_K, "rewrite": True},
+            json={"q": query, "top_k": TOP_K, "rewrite": True, "role": role},
             timeout=120.0,  # 改写要调一次 DeepSeek，留足时间
         )
         resp.raise_for_status()
@@ -328,24 +336,29 @@ builder.add_edge("delete_done", END)
 graph_app = builder.compile(checkpointer=MemorySaver())
 
 
-def run_agent(question: str, thread_id: str = "default"):
+def run_agent(question: str, thread_id: str = "default", role: str | None = None):
     """跑一轮问答：返回 (RagAnswer 或 None, 本轮查了几轮, 等待确认的信息或 None)。
+    role 是调用方角色（比如 "运维"）：只影响这次问答能看到哪些文档，存在 ContextVar 里给 search_kb 用。
     thread_id 相同就是同一轮对话，记得住上文。
     best_score 每问一次重新算（invoke 里传 0.0 盖掉上一轮的），不然上一轮的高分会让这轮的陷阱题蒙混过关。
     查了几轮现在也是本轮的数（count_searches 只数最后一条 HumanMessage 之后），不是整个 thread 的累计。
     注意：图在确认关卡冻住时，invoke 返回的状态里有 __interrupt__，这时还没有最终答案，
     不能按 RagAnswer 去解析最后一条消息（那条是带 tool_calls 的 AI 消息，不是 JSON）——先返回等待确认。
     recursion_limit 从 10 提到 15：多了 gate 关卡节点，两轮问答要走 10 步，留点余量。"""
-    result = graph_app.invoke(
-        {"messages": [HumanMessage(question)], "best_score": 0.0},
-        {"configurable": {"thread_id": thread_id}, "recursion_limit": 15},
-    )
-    rounds = count_searches(result["messages"])
-    interrupts = result.get("__interrupt__")
-    if interrupts:
-        return None, rounds, interrupts[0].value
-    ans = RagAnswer.model_validate_json(result["messages"][-1].content)
-    return ans, rounds, None
+    token = _current_role.set(role)  # 设定本次角色；invoke 跑完（或抛异常）都在 finally 里清空
+    try:
+        result = graph_app.invoke(
+            {"messages": [HumanMessage(question)], "best_score": 0.0},
+            {"configurable": {"thread_id": thread_id}, "recursion_limit": 15},
+        )
+        rounds = count_searches(result["messages"])
+        interrupts = result.get("__interrupt__")
+        if interrupts:
+            return None, rounds, interrupts[0].value
+        ans = RagAnswer.model_validate_json(result["messages"][-1].content)
+        return ans, rounds, None
+    finally:
+        _current_role.reset(token)
 
 
 def resume_agent(thread_id: str, approved: bool):

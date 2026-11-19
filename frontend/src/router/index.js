@@ -33,7 +33,7 @@ const allRoutes = [
   },
   {
     path: '/login',
-    redirect: '/welcome',
+    redirect: '/bussiness/Chat-With-RAG',
   },
   {
     path: '/register',
@@ -113,7 +113,7 @@ const allRoutes = [
   },
   {
     path: '/',
-    redirect: '/welcome'
+    redirect: '/bussiness/Chat-With-RAG'
   }
 ]
 

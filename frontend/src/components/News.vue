@@ -651,7 +651,7 @@ watch(()=>news_chat.value.url, (newVal)=>{
               </p> -->
             </div>
 
-            <div v-if="message.type === 'topic_diff'" class="flex flex-column" style="background:#fff">
+            <div v-if="message.type === 'topic_diff'" class="flex flex-column" style="background:var(--app-surface)">
               <Card class="topic-card" v-for="item in message?.content ?? []" align="left">
                 <template #content>
                   <div class="flex flex-column" >
@@ -672,7 +672,7 @@ watch(()=>news_chat.value.url, (newVal)=>{
                 }}
               </p>
             </div>
-            <div v-if="message.type === 'daily_news'" style="background: #fff">
+            <div v-if="message.type === 'daily_news'" style="background: var(--app-surface)">
 
               <Card v-for="e in message?.content ?? []" class="daily-card">
                 <!-- <template #title>Simple Card</template> -->
@@ -771,12 +771,12 @@ watch(()=>news_chat.value.url, (newVal)=>{
   }
 }
 #chatContainer {
-  background: #fff;
+  background: var(--app-surface);
   padding: 0 25px 11px 17px;
 }
 
 .daily-card {
-  background: #F0F3FC;
+  background: var(--app-surface-2);
   padding: 12px 16px;
   border-radius: 3px;
   margin-top: 24px;
@@ -793,7 +793,7 @@ watch(()=>news_chat.value.url, (newVal)=>{
     }
     ul li a{
       font-size: 12px;
-      color: #58A9FC;
+      color: var(--app-primary);
       &:hover {
         background: transparent;
       }
@@ -802,7 +802,7 @@ watch(()=>news_chat.value.url, (newVal)=>{
 }
 
 .topic-card {
-  background: #F0F3FC;
+  background: var(--app-surface-2);
   padding: 12px 16px;
   border-radius: 3px;
   margin-top: 24px;
@@ -811,25 +811,25 @@ watch(()=>news_chat.value.url, (newVal)=>{
     margin-top: 0;
   }
   &:nth-child(7n+1) {
-    background: #FDFFF8;
+    background: #f8fafc;
   }
   &:nth-child(7n+2) {
-    background: #F3F4FF;
+    background: #f5f7fa;
   }
   &:nth-child(7n+3) {
-    background: #ECF5FF;
+    background: #eef4fb;
   }
   &:nth-child(7n+4) {
-    background: rgba(220,245,250,.63);
+    background: #eef6f8;
   }
   &:nth-child(7n+5) {
-    background: rgba(120,120,232,.14);
+    background: var(--app-primary-soft);
   }
   &:nth-child(7n+6) {
-    background: rgba(52,230,118,0.09);
+    background: #eefaf2;
   }
   &:nth-child(7n) {
-    background: rgba(124,209,255,.21);
+    background: #eaf4fb;
   }
   .title-box {
     display: flex;
@@ -852,7 +852,7 @@ watch(()=>news_chat.value.url, (newVal)=>{
     }
     ul li a{
       font-size: 14px;
-      color: #58A9FC;
+      color: var(--app-primary);
       &:hover {
         background: transparent;
       }
@@ -943,7 +943,7 @@ ul li{
   overflow-y: auto;
   .more {
     font-size: 12px;
-    color: #578BF7;
+    color: var(--app-primary);
     &:hover {
       background: transparent;
     }
@@ -965,4 +965,64 @@ ul li{
   margin-right: 10px;
 }
 
+
+/* ===== 新版设计系统覆盖：修正标签栏/日期框/按钮的旧样式 ===== */
+#chatBox ::v-deep(.p-tablist) {
+  background: var(--app-surface-2);
+  border-bottom: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm) var(--app-radius-sm) 0 0;
+}
+#chatBox ::v-deep(.p-tab) {
+  color: var(--app-text-2);
+  font-weight: 500;
+  font-size: 14px !important;
+  padding: 12px 2px !important;
+}
+#chatBox ::v-deep(.p-tab:hover) { color: var(--app-text); }
+#chatBox ::v-deep(.p-tab.p-tab-active) {
+  color: var(--app-primary);
+  font-weight: 600;
+  border-color: var(--app-primary) !important;
+}
+#chatBox ::v-deep(.p-tablist-active-bar) {
+  background: var(--app-primary);
+  height: 2px;
+}
+#chatBox ::v-deep(.p-tabpanels) {
+  background: var(--app-surface);
+}
+/* 日期框 / 输入框：白底深字，去掉黑底 */
+#chatBox ::v-deep(.p-datepicker),
+#chatBox ::v-deep(.p-inputtext),
+#chatBox ::v-deep(.p-select),
+#chatBox ::v-deep(.input-select textarea) {
+  background: var(--app-surface) !important;
+  color: var(--app-text) !important;
+  border: 1px solid var(--app-border-strong) !important;
+  border-radius: var(--app-radius-sm) !important;
+}
+#chatBox ::v-deep(.p-datepicker input) {
+  background: var(--app-surface) !important;
+  color: var(--app-text) !important;
+}
+/* 操作按钮：靛蓝主色，统一高度 */
+#chatBox ::v-deep(.operate .p-button),
+#chatBox .operate-box .p-button {
+  background: var(--app-primary) !important;
+  border-color: var(--app-primary) !important;
+  height: 35px !important;
+  font-size: 13px !important;
+  font-weight: 500;
+}
+#chatBox ::v-deep(.operate .p-button:hover),
+#chatBox .operate-box .p-button:hover {
+  background: var(--app-primary-hover) !important;
+  border-color: var(--app-primary-hover) !important;
+}
+/* 卡片描边与圆角 */
+.daily-card, .topic-card {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm) !important;
+}
+.operate-box { margin-bottom: 12px; }
 </style>

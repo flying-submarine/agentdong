@@ -889,6 +889,10 @@ const evaluate = ref('')
 .message.cardMessage { padding: 0; margin: 0; }
 .message.cardAgentMessage { margin: 0; padding: 0; }
 
+/* 用户消息靠右：头像换到右侧，气泡左缘朝右 */
+.userMessage { flex-direction: row-reverse; }
+.userMessage .userAvatar { margin-right: 0; margin-left: 12px; }
+
 .userAvatar,
 .agentAvatar {
   width: 34px;
@@ -900,15 +904,23 @@ const evaluate = ref('')
 }
 
 .w-full {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 74%;
+}
+
+/* 新闻卡片 / 时间线类消息需要整行宽度，不收窄 */
+.cardMessage .w-full,
+.cardAgentMessage .w-full {
+  flex: 1;
+  max-width: 100%;
 }
 
 /* 用户消息：靛蓝气泡 + 白字，高对比 */
 .userMessage .w-full {
   background: var(--app-primary);
   color: #fff;
-  border-radius: 4px 14px 14px 14px;
+  border-radius: 14px 4px 14px 14px;
   padding: 12px 16px;
   box-shadow: var(--app-shadow-sm);
 }

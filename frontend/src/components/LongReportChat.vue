@@ -5,6 +5,7 @@ import { ref, toRefs } from "vue";
 import ChatMessage from "./ChatMessage.vue";
 import { useModelStore } from "@/stores/model";
 import { LongReportSummarizationSession } from "@/service/LongReportSummarizationSession";
+import { askGraph, formatAskGraphAnswer, getDemoSessionId } from '@/service/askGraph'
 import { onMounted } from 'vue';
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import { useRoute } from 'vue-router';
@@ -39,29 +40,22 @@ const emit = defineEmits({
   changePage: (value) => {}
 });
 
+// 统一走线上 /api/agt/ask_graph；产出兼容原循环的 generating/stop 块
 const tryChat = async (
   model: string,
   inputMessage: string,
 ) => {
-  let response;
   buildFbId.value = uuidv4()
-  try {
-    let data = {
-      input: inputMessage,
-      history: chat_history.value,
-      sessionId:ssCreateid.value,
-      stream: true,
-      feedbackId:buildFbId.value
-    }
-    response= await LongReportSummarizationSession.chat(`/gpt/lrllm/docs/${docId}/chat`,data)
-  } catch (error: any) {
-    console.error(error);
-    if (error.status_code === 404) {
-      response = await tryChat(model, inputMessage);
-      return response;
-    }
-  }
-  return response;
+  const res = await askGraph(inputMessage, getDemoSessionId())
+  const text = res ? formatAskGraphAnswer(res) : '连不上服务，请稍后再试'
+  const retrievals = res?.sources?.length
+    ? res.sources.map(sid => ({ title: sid, url: '#', content: '知识库来源块 ' + sid }))
+    : []
+  const self = (async function* () {
+    yield { status: 'generating', output: text, retrieval: retrievals, suggestQuestions: {} }
+    yield { status: 'stop', output: '' }
+  })()
+  return self
 };
 // 处理鼠标悬浮事件
 

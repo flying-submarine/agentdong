@@ -3,6 +3,7 @@
 // import { Ollama,type ChatRequest,type ChatResponse } from 'ollama'
 // const ollama = new Ollama({ host: '11.163.70.215:11434' })
 import { ChatClient } from '@/service/ChatClient'
+import { askGraph, formatAskGraphAnswer, getDemoSessionId } from '@/service/askGraph'
 const client = new ChatClient()
 import { ref, toRefs } from "vue";
 import ChatMessage from "./ChatMessage.vue";
@@ -119,44 +120,16 @@ const upload_file = (file, userId) => {
 const CHAT_MODE_FREE_CHAT = 'free chat'
 const CHAT_MODE_FILE_QA = 'file QA'
 const chatMode = ref(CHAT_MODE_FREE_CHAT)
+// 统一走线上 /api/agt/ask_graph；产出纯文本块以复用现有 `currentOutput += part` 循环
 const tryChat = async (
   model: string,
   inputMessage: string,
 ) => {
-  let response;
-  try {
-    // response = await ollama.chat({
-    //   model,
-    //   messages: [inputMessage],
-    //   stream: true,
-    // });
-      // response = await client.writing({
-      //   data:{
-      //       input: inputMessage,
-      //       userId: user.value,
-      //       prompt_aug: use_prompt_augmentation.value
-      //   },
-      //   stream: false,
-      // });
-      let data = {
-        data:{
-            input: inputMessage,
-            userId: user.value,
-            prompt_aug: use_prompt_augmentation.value,
-            history: chat_history.value,
-        },
-        stream: true,
-      }
-      response= await stream_req({url:'/writing/psllm/odw/directWriting/write',data})
-  } catch (error: any) {
-    console.error(error);
-    if (error.status_code === 404) {
-      // await pullModelWithProgress(model);
-      response = await tryChat(model, inputMessage);
-      return response;
-    }
-  }
-  return response;
+  const res = await askGraph(inputMessage, getDemoSessionId())
+  const text = res ? formatAskGraphAnswer(res) : '连不上服务，请稍后再试'
+  return (async function* () {
+    yield text
+  })()
 };
 
 let i = 0;

@@ -151,10 +151,8 @@
 
   onMounted(() => {
     document.addEventListener('keydown', loginEnter);
-    const firstVisit=localStorage.getItem('firstVisit');
-    if(firstVisit!=='inited'){
-      use_router.push('/welcome')
-    }
+    // 演示站已关闭欢迎视频跳转：直接进入业务页
+    // (原先首次访问会 push('/welcome'))
   
   });
 

@@ -3,6 +3,7 @@
 // import { Ollama,type ChatRequest,type ChatResponse } from 'ollama'
 // const ollama = new Ollama({ host: '11.163.70.215:11434' })
 import { ChatClient } from '@/service/ChatClient'
+import { askGraphStream, getDemoSessionId } from '@/service/askGraph'
 const client = new ChatClient()
 import { ref, toRefs } from "vue";
 import ChatMessage from "./ChatMessage.vue";
@@ -46,45 +47,15 @@ const uploadFile = async () => {
 const CHAT_MODE_FREE_CHAT = 'free chat'
 const CHAT_MODE_FILE_QA = 'file QA'
 const chatMode = ref(CHAT_MODE_FREE_CHAT)
+// 统一走线上 /api/agt/ask_graph（agentdong.com）；返回 { output } 流以复用现有渲染循环
 const tryChat = async (
   model: string,
   inputMessage: string,
 ) => {
-  let response;
-  try {
-    if (chatMode.value === CHAT_MODE_FREE_CHAT) {
-      response = await client.chat({
-        input: inputMessage,
-        user: user.value,
-        stream: true,
-        increase: true,
-        sessionId: sessionId.value,
-        history: chat_history.value,
-      });
-    } else if (chatMode.value === CHAT_MODE_FILE_QA) {
-      const doc_id = Object.keys(selectedDocFile.value)[0]
-      if (!doc_id) {
-        throw new Error('doc not select')
-      }
-      response = await client.file_qa({
-        input: inputMessage,
-        user: user.value,
-        stream: true,
-        increase: true,
-        doc_id,
-        sessionId: sessionId.value,
-        history: chat_history.value,
-      });
-    }
-  } catch (error: any) {
-    console.error(error);
-    if (error.status_code === 404) {
-      // await pullModelWithProgress(model);
-      response = await tryChat(model, inputMessage);
-      return response;
-    }
+  if (!sessionId.value || sessionId.value === 'test') {
+    sessionId.value = getDemoSessionId()
   }
-  return response;
+  return askGraphStream(inputMessage)
 };
 
 let i = 0;

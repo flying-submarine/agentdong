@@ -15,6 +15,7 @@ import SubmitImg from '@/assets/longReportSubmit.png';
 import ClearContent from '@/assets/longReportClear.png';
 
 import { serviceFetch } from '@/service/utils';
+import { askGraph, formatAskGraphAnswer } from '@/service/askGraph';
 const { user } = toRefs(useUserStore())
 
 
@@ -81,114 +82,38 @@ const emit = defineEmits<{
   (e: "chat", data: any, chat_handler: any): void;
 }>()
 
-const news_chat = async () => {
-  if (answer_loading.value || messageContent.value.length < 1) {
-    return
-  }
-  if(generateStatus.value) return;
-  const user_chat = messageContent.value
-  messageContent.value = ''
-  controlFlag.value = true;
+// 统一发送：走线上 /api/agt/ask_graph（替代已失效的 /gpt/news/retrieve_qagen 流）
+const callAskGraph = async (question: string) => {
+  if (answer_loading.value || generateStatus.value) return
+  if (!question || !question.trim()) return
+  const user_chat = question.trim()
   append_message({ role: 'user', content: user_chat })
   answer_loading.value = true
   scrollToBottom(chatArea)
-  // /news/qagen
-  // const response = await fetch(`/news/qagen`, {
-  const response = await serviceFetch(`/gpt/news/retrieve_qagen`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      query: user_chat,
-      user: user.value,
-      history: chat_history.value.map(x => ([{ role: 'user', content: x.user }, { role: 'agent', content: x.bot }])).flat(),
-      stream: true,
-      increase: true,
-      web_aug: use_internet_checked.value,
-    })
+
+  const res = await askGraph(user_chat)
+  answer_loading.value = false
+  generateStatus.value = true
+
+  const text = res ? formatAskGraphAnswer(res) : '连不上服务，请稍后再试'
+  const retrievals = res?.sources?.length
+    ? res.sources.map(sid => ({ title: sid, url: '#', content: '知识库来源块 ' + sid }))
+    : []
+  append_message({
+    role: 'agent',
+    content: storeData(text, retrievals, []),
+    refrence: '',
   })
-  answer_loading.value = false;
-  generateStatus.value = true;
-  if(!controlFlag.value) {
-    messageContent.value = '';
-    generateStatus.value = false;
-    return;
-  }
-
-  if (!response.ok) {
-    console.error('req /news/qagen')
-    generateStatus.value = false;
-    return
-  }
-
-try {
-  const reader = response.body?.getReader();
-  const decoder = new TextDecoder();
-  const res1 = await (async function* () {
-      while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          yield decoder.decode(value);
-      }
-  })();
-  let questionList = [];
-  let questions;
-  let retrievals = [];
-  let refrence = '';
-  for await (let chunk of json_chunk_handler(res1)) {
-    const status = chunk.status;
-    console.log(chunk);
-    if (status === 'generating') {
-      generating_content.value += chunk.output ?? ''
-      scrollToBottom(chatArea)
-    } else if (status === 'stop') {
-      if(!chunk?.questions?.error) {
-        questions =  chunk?.questions||'';
-      }
-      if(chunk?.retrievals) {
-        retrievals = chunk?.retrievals||[];
-      }
-      if(retrievals.length>0) {
-        refrence = "<div style='padding: 15px'>" + retrievals.map(x => (`<div><a class="alink" style="color: #58A9FC;display:flex" href="${x.url}" title="${x.content}" target="_blank"><div><span style="font-size:20px;line-height: 18px;align-self: flex-start;">·&nbsp;</span>${x.title}</div></a></div>`)).join('\n') + "</div>"
-      }
-      if(questions) {
-        try {
-          questionList = Object.values(JSON.parse(questions));
-        } catch (error) {
-          questionList = Object.values(questions)||[];
-          console.log(questions, 'error question');
-        }
-      }
-      generating_content.value += chunk.output ?? ''
-      append_message({ 
-        role: 'agent', 
-        content: storeData(generating_content.value, retrievals, questionList), //generating_content.value, 
-        refrence 
-      });
-      console.log('渲染处理前回答数据：', generating_content.value);
-      console.log('渲染处理前引文数据：', retrievals);
-      questionList.forEach(item=>{
-        messages.value.push({
-          role: 'phrase',
-          content: item
-        });
-      });
-      // if (chat_history.value.length < 1) {
-      //   refresh_sessions_handler()
-      // }
-      append_history(user_chat, generating_content.value)
-      generating_content.value = '';
-      generateStatus.value = false;
-      scrollToBottom(chatArea);
-      break;
-    }
-  }
-} catch (error) {
-  generateStatus.value = false;
-  console.log(error);
+  append_history(user_chat, text)
+  generating_content.value = ''
+  generateStatus.value = false
+  scrollToBottom(chatArea)
 }
 
+const news_chat = async () => {
+  const q = messageContent.value
+  messageContent.value = ''
+  await callAskGraph(q)
 }
 
 const agentParseData = (item,type)=>{
@@ -199,114 +124,8 @@ const agentParseData = (item,type)=>{
   }
 }
 
-const sendMessage =  async (contentMessage)=>{
-  if (answer_loading.value) {
-    return
-  }
-  if(generateStatus.value) return;
-  controlFlag.value = true;
-  answer_loading.value = true;
-  append_message({ role: 'user', content: contentMessage })
-  scrollToBottom(chatArea);
-  const response = await serviceFetch(`/gpt/news/retrieve_qagen`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      query: contentMessage,
-      user: user.value,
-      history: chat_history.value.map(x => ([{ role: 'user', content: x.user }, { role: 'agent', content: x.bot }])).flat(),
-      stream: true,
-      increase: true,
-      web_aug: use_internet_checked.value,
-    })
-  });
-  answer_loading.value = false;
-  generateStatus.value = true;
-  if(!controlFlag.value) {
-    messageContent.value = '';
-    generateStatus.value = false;
-    return;
-  }
-  if (!response.ok) {
-    console.error('req /news/qagen');
-    generateStatus.value = false;
-    return
-  }
-try {
-  const reader = response.body?.getReader();
-  const decoder = new TextDecoder();
-  const res1 = await (async function* () {
-      while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          yield decoder.decode(value);
-      }
-  })();
-
-  let questionList = [];
-  let questions;
-  let retrievals = [];
-  let refrence = '';
-  for await (let chunk of json_chunk_handler(res1)) {
-    const status = chunk.status;
-    console.log(chunk);
-    if (status === 'generating') {
-      generating_content.value += chunk.output ?? ''
-      scrollToBottom(chatArea)
-    } else if (status === 'stop') {
-      if(!chunk?.questions?.error) {
-        questions =  chunk?.questions||'';
-      }
-      if(chunk?.retrievals) {
-        retrievals = chunk?.retrievals||[];
-      }
-      if(retrievals.length>0) {
-        refrence = "<div style='padding: 15px'>" + retrievals.map(x => (`<div><a class="alink" style="color: #58A9FC;display:flex" href="${x.url}" title="${x.content}" target="_blank"><div><span style="font-size:20px;line-height: 18px;align-self: flex-start;">·&nbsp;</span>${x.title}</div></a></div>`)).join('\n') + "</div>"
-      }
-      if(questions) {
-        try {
-          questionList = Object.values(JSON.parse(questions));
-        } catch (error) {
-          questionList = Object.values(questions)||[];
-          console.log(questions, 'error question');
-        }
-      }
-      generating_content.value += chunk.output ?? ''
-      append_message({
-       role: 'agent',
-       content: storeData(generating_content.value, retrievals, questionList), //generating_content.value, 
-       refrence 
-      });
-      questionList.forEach(item=>{
-        messages.value.push({
-          role: 'phrase',
-          content: item
-        });
-      });
-      // if (chat_history.value.length < 1) {
-      //   refresh_sessions_handler()
-      // }
-      append_history(contentMessage, generating_content.value)
-      generating_content.value = ''
-      scrollToBottom(chatArea);
-      generateStatus.value = false;
-      break;
-    }
-  }
-} catch (error) {
-  generateStatus.value = false;
-  console.log(error);
-}
-  // const res = await response.json()
-  // const content = res?.message?.content
-  // const retrievals = res?.retrievals
-  // const refs = {}
-  // const refrence = "<ul style='padding: 15px'>" + retrievals.map(x => (`<li><a class="alink" style="color: #58A9FC;display:flex" href="${x[1]}" target="${x}"><span style="font-size:20px;line-height: 18px;align-self: flex-start;">·&nbsp;</span><div>${x[1]}</div></a></li>`)).join('\n') + "</ul>"
-  // append_message({ role: 'agent', content, refrence });
-  // scrollToBottom(chatArea);
-  // append_history(contentMessage, content)
+const sendMessage = async (contentMessage: string) => {
+  await callAskGraph(contentMessage)
 }
 
 const chat = () => {
@@ -335,179 +154,10 @@ const chat = () => {
 const chatArea = ref<HTMLElement | null>(null);
 const generating_content = ref('')
 const submitChat = async () => {
-  const user_chat = messageContent.value
+  await callAskGraph(messageContent.value)
   messageContent.value = ''
-
-  append_message({ role: 'user', content: user_chat })
-  scrollToBottom(chatArea)
-  answer_loading.value = true
-  const data = {
-    input: user_chat,
-    user: user.value,
-    stream: true,
-    increase: true,
-    sessionId: sessionId.value,
-    history: chat_history.value,
-  }
-
-  const response = await stream_req({ url: '/llm/chat', data })
-  answer_loading.value = false
-  generating_content.value = ''
-  for await (let chunk of json_chunk_handler(response)) {
-    const status = chunk.status
-    if (status === 'generating') {
-      generating_content.value += chunk.output ?? ''
-      scrollToBottom(chatArea)
-    } else if (status === 'stop') {
-      append_message({ role: 'agent', content: generating_content.value })
-      if (chat_history.value.length < 1) {
-        refresh_sessions_handler()
-      }
-      append_history(user_chat, generating_content.value)
-      generating_content.value = ''
-      break
-    }
-  }
 }
 
-const clear_context = () => {
-  controlFlag.value = false;
-  answer_loading.value = false;
-  chat_history.value = []
-  if (messages.value.length > 0 && messages.value[messages.value.length - 1].role !== 'divider') {
-    messages.value.push({
-      role: 'divider'
-    })
-  }
-}
-import CryptoJS from 'crypto-js';
-const truncate=(q)=>{
-  var len = q.length;
-        if (len <= 20) return q;
-        return q.substring(0, 10) + len + q.substring(len - 10, len);
-}
-const  toEnglish=async ()=>{
-        
-        //console.log(str);
-        const appKey = import.meta.env.VITE_APP_KEY;
-        const key = import.meta.env.VITE_API_KEY; // 注意：保密
-        const salt = (new Date).getTime();
-        const curtime = Math.round(new Date().getTime() / 1000);
-        //this.query = '您好，欢迎再次使用有道智云文本翻译API接口服务';
-        const from = 'auto';
-        const to = 'en';
-        const str1 = appKey + truncate(messageContent.value) + salt + curtime + key;
-        //const vocabId = '您的用户词表ID';
-        const sign = CryptoJS.SHA256(str1).toString(CryptoJS.enc.Hex);
-        let param = new URLSearchParams({
-          q: messageContent.value.toString(),
-          appKey: appKey,
-          salt: salt.toString(),
-          from: from,
-          to: to,
-          sign: sign,
-          signType: "v3",
-          curtime: curtime.toString()
-        }).toString();
-        try {
-          const response = await fetch('/translate/api', {
-            method: 'POST', // 或者 'post'
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: param
-          });
-          if (!response.ok) {
-            const errorText = await response.text(); // 尝试读取响应文本
-            throw new Error(
-              `Network response was not ok. Status: ${response.status} ${response.statusText}. Body: ${errorText}`
-            );
-          }
-          const data = await response.json();
-          console.log(data);
-          messageContent.value = data.translation[0]
-        } catch (error) {
-          console.error('Error:', error);
-        }
-}
-
-const toArabic=async ()=>{
-  if(messageContent.value){
-        const appKey = import.meta.env.VITE_APP_KEY;
-        const key = import.meta.env.VITE_API_KEY; // 注意：保密
-        const salt = (new Date).getTime();
-        const curtime = Math.round(new Date().getTime() / 1000);
-        //this.query = '您好，欢迎再次使用有道智云文本翻译API接口服务';
-        const from = 'auto';
-        const to = 'ar';
-        const str1 = appKey + truncate(messageContent.value) + salt + curtime + key;
-        //const vocabId = '您的用户词表ID';
-        const sign = CryptoJS.SHA256(str1).toString(CryptoJS.enc.Hex);
-        let param = new URLSearchParams({
-          q: messageContent.value.toString(),
-          appKey: appKey,
-          salt: salt.toString(),
-          from: from,
-          to: to,
-          sign: sign,
-          signType: "v3",
-          curtime: curtime.toString()
-        }).toString();
-        try {
-          const response = await fetch('/translate/api', {
-            method: 'POST', // 或者 'post'
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: param
-          });
-          if (!response.ok) {
-            const errorText = await response.text(); // 尝试读取响应文本
-            throw new Error(
-              `Network response was not ok. Status: ${response.status} ${response.statusText}. Body: ${errorText}`
-            );
-          }
-          const data = await response.json();
-          console.log(data);
-          messageContent.value = data.translation[0]
-        } catch (error) {
-          console.error('Error:', error);
-        }
-  }
-}
-
-
-// const get_phrases = async () => {
-//   return (await serviceFetch(`/gpt/commonPhrases/list`, { headers: { 
-//     'Content-Type': 'application/json',
-//   }})).json();
-// }
-
-// const init_phrases = ()=>{
-//   get_phrases().then((data) => {
-//     if (data.data) {
-//       phrasesList.value = data.data;
-//       (data.data||[]).forEach(item=>{
-//         messages.value.push({
-//           role: 'phrase',
-//           content: item.phrases
-//         })
-//       })
-//     }
-//   })
-// }
-
-// init_phrases()
-
-defineExpose({
-  clear_context,
-})
-
-const submitMessage = (content)=>{
-  sendMessage(content);
-}
-
-import FeedBack from "./FeedBack.vue";
 </script>
 
 <template>
@@ -545,28 +195,18 @@ import FeedBack from "./FeedBack.vue";
         </div>
       </div>
     </div>
-    <!-- <slot name="tools"></slot> -->
-    <div class="flex flex-row align-items-center justify-content-start gap-2 pl-2">
-      <!-- <Button icon="pi pi-refresh" aria-label="Submit" @click="clear_context" severity="secondary" /> -->
-      <div style="padding:5px 0 0 10px;cursor: pointer" @click="clear_context">
-        <img :src="ClearContent" style="width: 14px; height: 14px;margin-right:5px;">
-        <span>Clear Context</span>
-      </div>
-      <!-- <span>Internet:&nbsp;</span>
-      <ToggleSwitch v-model="use_internet_checked" /> -->
-      <!-- <Button icon="pi pi-history" text rounded @click="show_history_view = true" /> -->
-      &nbsp;
-            <!-- <div style="display: flex; margin-left: auto;">
-              <Button 
-                  style="height: 36px;" @click="toEnglish" label="TO英语"/>
-                  &nbsp;
-              <Button 
-                  style="height: 36px;" @click="toArabic" label="TO阿拉伯语"/>
-          </div> -->
+    <div class="chat-toolbar">
+      <button class="clear-btn" type="button" @click="clear_context">
+        <i class="pi pi-refresh"></i><span>清空上下文</span>
+      </button>
     </div>
     <div id="inputArea">
-      <Textarea v-model="messageContent" @keyup.enter="news_chat" id="chatInput" dir="auto" />
-      <Button :disabled="answer_loading ? true : undefined" @click="news_chat" id="submitButton"><img :src="SubmitImg"></Button>
+      <div class="input-wrap">
+        <Textarea v-model="messageContent" @keyup.enter="news_chat" id="chatInput" dir="auto"
+          placeholder="输入你的问题，Enter 发送…" />
+      </div>
+      <Button :disabled="answer_loading ? true : undefined" @click="news_chat" id="submitButton"
+        icon="pi pi-send" aria-label="发送" />
     </div>
   </div>
 </template>
@@ -574,66 +214,82 @@ import FeedBack from "./FeedBack.vue";
 
 
 <style scoped>
-
-/* #chatAreaBox {
-  position: absolute;
-  top: 0;
-  left: 17px;
-  bottom: 11px;
-  right: 25px;
-  overflow-y: auto;
-  .more {
-    font-size: 12px;
-    color: #578BF7;
-    &:hover {
-      background: transparent;
-    }
-  }
-} */
 #chatBox {
   display: flex;
-  height: 100%;
   flex-direction: column;
-  background: #fff;
-  margin: 13px 16px;
+  height: calc(100% - 24px);
+  min-height: 0;
+  margin: 12px 14px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
   box-shadow: var(--app-shadow-sm);
-  border-radius: 5px;
-  height: calc(100% - 26px);
+  overflow: hidden;
 }
-
 #chatContainer {
   position: relative;
-  width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
-
 #chatAreaBox {
   position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  right: 0;
+  inset: 0;
   overflow-y: auto;
-  &::v-deep .alink {
-    word-break: break-word;
-  }
-  &::v-deep .alink:hover {
-    background-color: transparent;
-  }
+  padding: 14px 10px 18px;
 }
+#chatAreaBox ::v-deep(.alink) { word-break: break-word; }
+#chatAreaBox ::v-deep(.alink:hover) { background: transparent; }
+
+.chat-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-top: 1px solid var(--app-border);
+}
+.clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--app-text-2);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+.clear-btn:hover { background: var(--app-surface-3); color: var(--app-primary); }
+.clear-btn i { font-size: 12px; }
 
 #inputArea {
   display: flex;
-  height: 100px;
-  width: 100%;
-  padding: 10px;
-  align-items: space-between;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 10px 14px 14px;
 }
-
+.input-wrap { position: relative; flex: 1; min-width: 0; }
 #chatInput {
-  width: calc(100% - 82px);
-  height: 100%;
-  padding: 10px;
-  margin-right: 10px;
+  width: 100%;
+  min-height: 72px;
+  max-height: 160px;
+  resize: vertical;
+  padding: 11px 13px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-surface);
+  color: var(--app-text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+#chatInput:focus { border-color: var(--app-primary); box-shadow: 0 0 0 3px var(--app-primary-ring); }
+#chatInput::placeholder { color: var(--app-text-3); }
+#submitButton.p-button {
+  height: 42px;
+  min-width: 42px;
+  width: 42px;
+  flex: 0 0 42px;
+  border-radius: var(--app-radius-sm);
 }
 </style>

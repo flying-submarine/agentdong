@@ -8,6 +8,9 @@
 # 另外：这里不再按分数过滤（以前的 SIM_THRESHOLD 0.4 不用了）——只负责把最像的 3 块排好，
 # 答不答、拒不拒是 M3 结构化输出的事；陷阱题的分数在评测里看，阈值到时再定。
 # 精排挂了怎么办：不报错，退回 RRF 顺序返回，并在响应里标 reranked=false（看得见才不坑人）。
+# 兜底（2026-11-19 加）：改写路最高分 < 0.5 时，再用原查询查一次，取分高的那路返回，
+# 并在响应里标 fallback_used=true。改写对短关键词问法会丢分（cap-10：改写 0.0203，原句 0.7979），
+# 兜底只在分数低时多查一次，大部分问题不触发，不多花钱。
 
 # 引用的包（每个包是干嘛的）：
 import os  # 读环境变量：服务地址默认 localhost，Docker 里 compose 传服务名
@@ -29,6 +32,7 @@ VECTOR_TOP_K = 10  # 向量一路取几个候选
 BM25_TOP_K = 10  # BM25 一路取几个候选
 RRF_TOP_N = 5  # RRF 合并后取几个进精排
 FINAL_TOP_K = 3  # 最终返回几块
+FALLBACK_THRESHOLD = 0.5  # 兜底线：改写路最高分低于它，才用原查询再查一次；和 M3 的拒答线 0.5 取同一个数，低于这条线 Agent 本来就会拒答，所以值得再试一次
 
 qclient = QdrantClient(url=QDRANT_URL)
 
@@ -138,13 +142,25 @@ class VectorSearchIn(BaseModel):
 
 @app.post("/vector_search")
 def do_vector_search(req: VectorSearchIn):
-    # 新版 /vector_search：先改写问题（可关），再混合检索，返回前 3 块。
-    # 响应里同时给原问题、改写后的问题、精排是否成功——调问题时看得见每一步。
+    # 新版 /vector_search：先改写问题（可关），再混合检索，返回前 3 块；改写路分数低时用原查询兜底一次。
+    # 响应里同时给原问题、改写后的问题、精排是否成功、兜底有没有用上——调问题时看得见每一步。
     rewritten = rewrite_query(req.q) if req.rewrite else req.q
     chunk_list = load_all_chunks()
     if not chunk_list:
-        return {"query": req.q, "rewritten_query": rewritten, "reranked": False, "results": []}
+        return {"query": req.q, "rewritten_query": rewritten, "reranked": False, "fallback_used": False, "results": []}
     ranked, reranked = hybrid_retrieve(rewritten, chunk_list)
+    fallback_used = False
+    # 兜底：只有同时满足这四个条件才多查一次——
+    # [1] 开了改写（req.rewrite），[2] 改写真的改动了问题（rewritten != 原问题，否则再查一次是重复劳动），
+    # [3] 精排成功跑起来了（reranked；精排挂了退回的是 RRF 分，量纲和 0.5 不是一回事，没法比），
+    # [4] 改写路最高分低于兜底线（这路再往下走 Agent 也会拒答）。
+    # 满足就用原查询再跑一次混合检索，两路比最高分，分高的赢；原句路赢了才换结果、标 fallback_used=true。
+    # 块列表 chunk_list 两路共用一次，不用重新拉；多花的只是一次向量化 + 一次精排。
+    if req.rewrite and rewritten != req.q and reranked and ranked and ranked[0][1] < FALLBACK_THRESHOLD:
+        ranked_orig, reranked_orig = hybrid_retrieve(req.q, chunk_list)
+        if reranked_orig and ranked_orig and ranked_orig[0][1] > ranked[0][1]:
+            ranked, reranked = ranked_orig, reranked_orig
+            fallback_used = True
     results = []
     for i, score in ranked[:req.top_k]:
         c = chunk_list[i]
@@ -154,7 +170,7 @@ def do_vector_search(req: VectorSearchIn):
             "score": score,
             "text": c["text"].strip(),
         })
-    return {"query": req.q, "rewritten_query": rewritten, "reranked": reranked, "results": results}
+    return {"query": req.q, "rewritten_query": rewritten, "reranked": reranked, "fallback_used": fallback_used, "results": results}
 
 @app.get("/search")
 def do_search(q: str = "RAG", top_k: int = 3):

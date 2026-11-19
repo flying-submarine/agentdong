@@ -6,10 +6,13 @@
 # M3 第 2 步：/ask_graph 返回结构化答案（refused / sources / confidence / answer），
 # 拒答由图里的 finalize 节点按分数硬拦（最高分 < 0.5 就 refused）。
 # /ask、/ask_stream、/ask_tool 都没动。
+# M4 第 4 步：/ask_graph 加限流（每个 session 每分钟最多 10 次，超了 429）。
 import json
 import os  # 读环境变量：服务地址默认 localhost，Docker 里 compose 传服务名
+import threading  # 锁（Lock）：多线程同时改限流计数时不打架
+import time  # 取现在几点：算限流窗口开了多久
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException  # HTTPException：抛出去 FastAPI 自动变成对应状态码的 JSON 响应（429 就靠它）
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -43,6 +46,33 @@ class GraphConfirmIn(BaseModel):
     # approved=True 放行去删，False 取消，文档还在。
     session_id: str = "default"
     approved: bool
+
+# M4 第 4 步：限流（rate limiting，固定窗口计数 fixed window counter）。
+# 每个 session 每分钟最多 RATE_LIMIT_N 次 /ask_graph，超了返回 429。
+# 内存版：计数存在字典里，8003 重启就清零；单机有效。生产要持久化得用 Redis（你 11 月 16 日定的不用 Redis，这里先做内存版）。
+# 两个老实边界：① 固定窗口在边界能 burst（第 59 秒刷满 10 次 + 下一分钟第 1 秒再刷 10 次），
+# 生产升级用令牌桶（token bucket）或滑动窗口（sliding window）；② session_id 是调用方自己报的，换个 session 就绕过去——
+# 这是按 session 公平，不是按用户鉴权；生产按登录用户 / API key 限。
+RATE_LIMIT_N = 10  # 每个 session 每分钟最多几次
+RATE_LIMIT_WINDOW = 60  # 窗口长度（秒）
+_rate_counts = {}  # session_id -> [窗口开始时间, 这窗口里已用了几次]
+_rate_lock = threading.Lock()  # 锁：同一时间只有一个线程能改 _rate_counts
+
+def _check_rate_limit(session_id: str):
+    # 查一次限流：返回 None = 放行；返回数字 = 超了，还要等几秒。
+    # 每问一次就调一次，计数在放行时才加 1——超了的请求不占名额。
+    now = time.time()
+    with _rate_lock:
+        window_start, count = _rate_counts.get(session_id, (now, 0))
+        if now - window_start >= RATE_LIMIT_WINDOW:
+            # 进了新的一分钟：窗口重开，计数清零，这次算第 1 次
+            _rate_counts[session_id] = [now, 1]
+            return None
+        if count >= RATE_LIMIT_N:
+            # 这窗口里已经用满了：告诉调用方还要等几秒（窗口剩多久 + 1，免得卡在边界上）
+            return int(RATE_LIMIT_WINDOW - (now - window_start)) + 1
+        _rate_counts[session_id] = [window_start, count + 1]
+        return None
 
 def retrieve(q, top_k=3):
     r = httpx.post(
@@ -150,6 +180,10 @@ def ask_tool(req: ToolAskIn):
 
 @app.post("/ask_graph")
 def ask_graph(req: GraphAskIn):
+    # M4 第 4 步：先查限流再调模型——超了的请求不花模型钱，直接 429。
+    wait = _check_rate_limit(req.session_id)
+    if wait is not None:
+        raise HTTPException(status_code=429, detail=f"请求太频繁，{wait} 秒后再试", headers={"Retry-After": str(wait)})
     try:
         ans, search_rounds, waiting = run_agent(req.question, req.session_id, req.role)
         if waiting is not None:
@@ -164,6 +198,7 @@ def ask_graph(req: GraphAskIn):
 def confirm_graph(req: GraphConfirmIn):
     # M3 第 4 步：续上冻住的图。approved=True 放行去删，False 取消。
     # 每次 curl 都是一个新连接，所以"隔一会儿再确认"本身就是断开再续上的验证——冻住的状态存在 MemorySaver 里，8003 不重启就一直在。
+    # 不限流：确认不调模型，冻住的图等不起——限了确认，删一半的流程会被卡住。
     try:
         ans, search_rounds, waiting = resume_agent(req.session_id, req.approved)
         if waiting is not None:

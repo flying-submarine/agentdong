@@ -1,4 +1,4 @@
-# 毕业设计 M1：文档服务（端口 8001）——在第 9 课第 3 步的基础上加文件上传。
+# M1：文档服务（端口 8001）——在第 9 课第 3 步的基础上加文件上传。
 # 新增：POST /upload，接收前端传来的文件（PDF / Word / Markdown / 纯文本），
 # 落盘 → 按格式解析成文本 → 和 /ingest 走同一条路（doc_id 按内容算、发 MQ、worker 入库）。
 # worker 不用改：/upload 发的消息和 /ingest 一模一样（{task_id, doc_id, text}），
@@ -19,6 +19,8 @@ from fastapi import FastAPI, File, HTTPException, UploadFile  # FastAPI：搭 HT
 from fastapi.middleware.cors import CORSMiddleware  # 跨域中间件：让浏览器里的前端能直接调这个服务
 from pydantic import BaseModel  # 定义请求体的结构（/ingest 收什么字段、什么类型，FastAPI 自动校验）
 import pika           # Python 连 RabbitMQ 的客户端库：发消息、声明队列都靠它
+from qdrant_client import QdrantClient  # 连 Qdrant：删文档要按 doc_id 删点
+from qdrant_client.models import FieldCondition, Filter, MatchValue  # 按 payload 条件删点：doc_id 等于谁就删谁的块
 from rag_core import get_doc_stats, get_chunk_lengths, count_keyword  # 第 5 课的三个工具函数，复用
 
 RABBITMQ_HOST = os.environ.get("RABBITMQ_HOST", "localhost")  # 环境变量优先：本地跑默认 localhost，Docker 里 compose 传服务名 rabbitmq
@@ -27,6 +29,9 @@ DLX = "dlx"
 DLQ = "ingest_tasks_dlq"
 DB_PATH = "tasks.db"
 UPLOAD_DIR = "uploads"  # 上传的原文件存在这里（留底 + 方便以后重新解析）
+QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")  # 环境变量优先：本地跑默认 localhost，Docker 里 compose 传服务名 qdrant
+COLLECTION = "docs"  # 和 8002 用同一个集合名
+qclient = QdrantClient(url=QDRANT_URL)  # 模块层建一个连 Qdrant 的客户端（建的时候不真的连，调用时才连，Qdrant 没起也不炸导入）
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 单个文件上限 20MB，超过直接拒绝（消息和内存都吃不消大文件）
 ALLOWED_EXTS = {".pdf", ".docx", ".md", ".txt"}  # 只收这四种格式，其他的报 400
 
@@ -210,6 +215,18 @@ def task_failed(task_id: str, req: TaskFailedIn):
     chars = task["chars"] if task else 0
     save_task(task_id, "failed", chars, 0, req.error[:200])
     return {"task_id": task_id, **load_task(task_id)}
+
+@app.delete("/doc/{doc_id}")
+def delete_doc_endpoint(doc_id: str):
+    # M3 第 4 步加的：按文档号删掉这篇文档在 Qdrant 里的所有块。先数后删，返回删了几块；
+    # 一篇都没有也返回 0，不报错。注意：只删向量库里的点，uploads/ 里的原文件和 tasks.db 里的任务记录不动（留底备查）。
+    filt = Filter(must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))])
+    try:
+        n = qclient.count(COLLECTION, count_filter=filt).count
+    except Exception:
+        n = 0
+    qclient.delete(collection_name=COLLECTION, points_selector=filt)
+    return {"doc_id": doc_id, "deleted": n}
 
 @app.get("/stats")
 def stats():

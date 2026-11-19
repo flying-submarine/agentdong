@@ -1,10 +1,11 @@
-# 毕业设计 M3 第 2 步：结构化输出 + 拒答阈值（端口 8003 的 /ask_graph 用这张图）。
-# 在第 1 步的图上加了两样：
-#   1. 读分节点（score）：每轮查完，从工具结果里读本轮最高分，记进 best_score（只升不降）。
-#   2. 收尾节点（finalize）：先按分数硬拦——最高分 < 0.5 直接拒答，不用模型猜；
-#      分数够了才调模型，用第 8 课的 RagAnswer 结构出答案（refused / sources / confidence / answer）。
-# 拒答有两层：代码按分数硬拦是底线，模型自己觉得块不够也可以在 JSON 里填 refused=true。
-# 8001、8002 不动；不用装新包。
+# 毕业设计 M3 第 3 步修复版：结构化输出 + 拒答阈值 + 记忆（端口 8003 的 /ask_graph 用这张图）。
+# 在第 2 步的图上只改了一处：
+#   count_searches 只数【本轮】的 search_kb 调用，不数整个 thread 的累计次数。
+#   旧版 bug：第一轮用了 2 轮，第二轮一开始 count 就已经是 2，模型节点直接改用不绑工具的模型，
+#   第二轮根本不查，best_score 还是 0.0，收尾节点就拒答。
+#   这就是 m3s3-clean 里 CNCF 追问被拒的根因：不是检索不行，是第二轮根本没查。
+#   直接调 8002 验证过：显式问 0.9839、代词问 0.9612，都过 0.5 线；新会话显式问 1 轮就答对。
+# 8001、8002 不动；不用装新包.
 
 # 引用的包（每个包是干嘛的）：
 import os  # 读环境变量：DeepSeek key 和检索服务地址
@@ -156,16 +157,25 @@ llm_json = ChatOpenAI(
 
 
 def count_searches(messages):
-    """数一数这轮对话里已经调了几次 search_kb（看 AI 消息里的 tool_calls）。"""
+    """数一数【本轮】已经调了几次 search_kb（看 AI 消息里的 tool_calls）。
+    只数最后一条 HumanMessage（本轮问题）之后的调用，不数以前轮次的。
+    旧版数的是整个 thread 的累计次数：第一轮用了 2 轮，第二轮一开始就以为已经查满 2 轮，
+    模型节点直接改用不绑工具的模型，第二轮根本不查，best_score 还是 0.0，收尾节点就拒答。
+    这就是 m3s3-clean 里 CNCF 追问被拒的根因。"""
+    start = 0
+    for i in range(len(messages) - 1, -1, -1):  # 从后往前找最后一条 HumanMessage（本轮问题）
+        if isinstance(messages[i], HumanMessage):
+            start = i
+            break
     n = 0
-    for m in messages:
+    for m in messages[start:]:  # 只数本轮问题之后的 AI 消息
         if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
             n += sum(1 for tc in m.tool_calls if tc.get("name") == "search_kb")
     return n
 
 
 def model_node(state: GraphState):
-    """模型节点：查满 2 轮就改用不绑工具的模型（只能等收尾，不能再查），否则用绑了工具的模型。
+    """模型节点：本轮查满 2 轮就改用不绑工具的模型（只能等收尾，不能再查），否则用绑了工具的模型。
     系统指令每次都加在最前面，但不存进历史。"""
     messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
     if count_searches(state["messages"]) >= MAX_SEARCH_ROUNDS:
@@ -221,8 +231,9 @@ graph_app = builder.compile(checkpointer=MemorySaver())
 
 
 def run_agent(question: str, thread_id: str = "default"):
-    """跑一轮问答：返回 (RagAnswer, 查了几轮)。thread_id 相同就是同一轮对话，记得住上文。
-    best_score 每问一次重新算（invoke 里传 0.0 盖掉上一轮的），不然上一轮的高分会让这轮的陷阱题蒙混过关。"""
+    """跑一轮问答：返回 (RagAnswer, 本轮查了几轮)。thread_id 相同就是同一轮对话，记得住上文。
+    best_score 每问一次重新算（invoke 里传 0.0 盖掉上一轮的），不然上一轮的高分会让这轮的陷阱题蒙混过关。
+    查了几轮现在也是本轮的数（count_searches 只数最后一条 HumanMessage 之后），不是整个 thread 的累计。"""
     result = graph_app.invoke(
         {"messages": [HumanMessage(question)], "best_score": 0.0},
         {"configurable": {"thread_id": thread_id}, "recursion_limit": 10},

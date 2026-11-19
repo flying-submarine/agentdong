@@ -7,7 +7,7 @@ import CKEditor from '@ckeditor/ckeditor5-vue';
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import App from './App.vue'
-import 'liux-components/dist/style.css'
+// import 'liux-components/dist/style.css'
 
 import PrimeVue from "primevue/config";
 import Button from "primevue/button";

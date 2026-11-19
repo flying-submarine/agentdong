@@ -2,7 +2,8 @@
 import { ref, toRefs } from "vue";
 import ChatMessage from "./ChatMessage.vue";
 import MultiSelect from "primevue/multiselect";
-import Dropdown from "primevue/dropdown";
+// import Dropdown from "primevue/dropdown";
+import Select from "primevue/select";
 import { useToast } from "primevue/usetoast";
 import Toast from "primevue/toast";
 const toast = useToast();
@@ -399,7 +400,7 @@ const use_prompt_augmentation = ref(false)
           autocomplete="off" />
         <InputText v-model="add_knowledge_doc_data.data.fileName" class="w-full md:w-20rem m-1" placeholder="File Name"
           autocomplete="off" />
-        <Dropdown v-model="add_knowledge_doc_data.data.fileType" :options="knowledge_doc_file_type_options"
+        <Select v-model="add_knowledge_doc_data.data.fileType" :options="knowledge_doc_file_type_options"
           optionLabel="name" placeholder="Select File Type" class="w-full md:w-20rem m-1" />
         <!-- <MultiSelect v-model="add_knowledge_doc_data.fileType" :options="knowledge_doc_file_type_options"
           optionLabel="name" placeholder="Select File Type" :selectionLimit="1" class="w-full md:w-20rem m-1" /> -->

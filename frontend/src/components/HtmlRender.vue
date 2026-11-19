@@ -14,7 +14,6 @@ import 'codemirror/addon/edit/continuelist';
 import 'codemirror/addon/display/fullscreen';
 import 'codemirror/addon/display/placeholder';
 import EventBus from '@/service/eventBus'
-import { el } from 'element-plus/es/locale';
 interface Props {
   source: string;
 }

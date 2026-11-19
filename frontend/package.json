@@ -1,0 +1,49 @@
+{
+  "name": "frontend",
+  "version": "1.0.0",
+  "description": "`src/` 是 Dong 在浙江省公众信息产业有限公司做过的 RAG 平台前端源码（137 个文件）： Vue 3 + Vite + Pinia + TypeScript。模块：知识库、文档、RAG 对话、长文总结、写作助手、 ChatBI、评测、登录/注册/账号管理。RAG 对话走 `/gpt/psllm/retrieval/chat|completions`， 带 sessionId、历史记录、反馈、删除会话。",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@ckeditor/ckeditor5-build-classic": "^41.4.2",
+    "@ckeditor/ckeditor5-vue": "^5.1.0",
+    "@primevue/themes": "^4.5.3",
+    "@tanstack/vue-query": "^5.62.0",
+    "ant-design-vue": "^4.2.6",
+    "codemirror": "^5.65.21",
+    "crypto-js": "^4.1.1",
+    "echarts": "^6.1.0",
+    "element-plus": "^2.14.8",
+    "html-to-md": "^0.8.8",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
+    "liux-components": "^1.0.5",
+    "markdown-it": "^15.0.3",
+    "markdown-it-mark": "^4.0.0",
+    "ollama": "^0.6.4",
+    "papaparse": "^5.7.1",
+    "pdfjs-dist": "^3.11.174",
+    "pinia": "^4.1.0",
+    "primeflex": "^4.0.0",
+    "primeicons": "^8.0.2",
+    "primevue": "^5.0.5",
+    "prismjs": "^1.30.0",
+    "turndown": "^7.2.5",
+    "uuid": "^14.0.3",
+    "vue": "^3.5.45",
+    "vue-router": "^5.5.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.11",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.8",
+    "vue-tsc": "^3.3.14"
+  }
+}

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>agentdong 知识库演示</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 760px; margin: 32px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 22px; }
+  h2 { font-size: 16px; margin: 28px 0 8px; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 12px 0; }
+  .muted { color: #888; font-size: 13px; }
+  .err { color: #c00; }
+  button { padding: 8px 16px; font-size: 14px; cursor: pointer; }
+  input[type=text] { width: 70%; padding: 8px; font-size: 14px; }
+  .chunk { background: #f6f6f6; border-radius: 6px; padding: 10px; margin: 8px 0; white-space: pre-wrap; word-break: break-all; font-size: 13px; }
+  .score { color: #0a7; font-weight: bold; }
+  #answer { white-space: pre-wrap; }
+  .ok { color: #0a7; }
+</style>
+</head>
+<body>
+<h1>agentdong 知识库演示</h1>
+<p class="muted">在线演示：上传文档、提问、看检索详情。陷阱题会被拒答；删库操作演示站不处理。</p>
+
+<div class="card">
+  <b>状态</b>
+  <span id="status" class="muted">检查中……</span>
+</div>
+
+<div class="card">
+  <h2>传文档</h2>
+  <input type="file" id="file">
+  <button onclick="upload()">上传入库</button>
+  <p id="uploadMsg" class="muted"></p>
+</div>
+
+<div class="card">
+  <h2>提问</h2>
+  <input type="text" id="q" value="Prometheus 是什么" onkeydown="if(event.key==='Enter')ask()">
+  <button onclick="ask()">问</button>
+  <p id="askErr" class="err"></p>
+  <div id="answer"></div>
+  <div id="retrieval"></div>
+</div>
+
+<script>
+// 演示页和服务同源：/api/xxx 由 Nginx 转给后面的服务（公网只放行读接口和上传，删库不对外）
+var DOC = "/api/doc";
+var RET = "/api/ret";
+var AGT = "/api/agt";
+var QDRANT = "/api/qdrant";
+// 每个访客一个 session：限流按 session 算，互不影响；多轮对话也按这个 session 记
+var SESSION = "demo-" + Math.random().toString(36).slice(2, 8);
+
+// 页面打开先查状态：Qdrant 点数 + 三个服务的 /health
+async function refreshStatus() {
+  var el = document.getElementById("status");
+  try {
+    var c = await (await fetch(QDRANT + "/collections/docs")).json();
+    var h1 = await (await fetch(DOC + "/health")).json();
+    var h2 = await (await fetch(RET + "/health")).json();
+    var h3 = await (await fetch(AGT + "/health")).json();
+    el.innerHTML = "Qdrant 点数 <b>" + c.result.points_count + "</b>　·　"
+      + "8001 " + h1.status + "　8002 " + h2.status + "（" + h2.mode + "）　8003 " + h3.status;
+    el.className = "ok";
+  } catch (e) {
+    el.textContent = "有服务没起来，请稍后再试";
+    el.className = "err";
+  }
+}
+refreshStatus();
+
+// 上传：POST /upload → 拿 task_id 轮询 /task/{id}，done 就显示入库了几块
+async function upload() {
+  var f = document.getElementById("file").files[0];
+  var msg = document.getElementById("uploadMsg");
+  if (!f) { msg.textContent = "先选一个文件（pdf / docx / md / txt）"; return; }
+  msg.textContent = "上传中……";
+  var fd = new FormData();
+  fd.append("file", f);
+  try {
+    var r = await fetch(DOC + "/upload", { method: "POST", body: fd });
+    var data = await r.json();
+    if (!r.ok) { msg.textContent = "上传失败：" + (data.detail || r.status); msg.className = "err"; return; }
+    msg.textContent = "已收到，任务号 " + data.task_id + "，正在后台处理……";
+    msg.className = "muted";
+    // 每 2 秒查一次状态
+    var timer = setInterval(async function () {
+      var t = await (await fetch(DOC + "/task/" + data.task_id)).json();
+      if (t.status === "done") {
+        clearInterval(timer);
+        msg.textContent = "入库完成：" + data.filename + "，共 " + t.chunks + " 块";
+        msg.className = "ok";
+        refreshStatus();
+      } else if (t.status === "failed") {
+        clearInterval(timer);
+        msg.textContent = "入库失败：" + t.error;
+        msg.className = "err";
+      }
+    }, 2000);
+  } catch (e) {
+    msg.textContent = "连不上文档服务，请稍后再试";
+    msg.className = "err";
+  }
+}
+
+// 提问：调 /ask_graph（带拒答和多轮记忆）+ /vector_search（检索详情）
+async function ask() {
+  var q = document.getElementById("q").value.trim();
+  var err = document.getElementById("askErr");
+  var ans = document.getElementById("answer");
+  var ret = document.getElementById("retrieval");
+  if (!q) return;
+  err.textContent = "";
+  ans.textContent = "想一想……";
+  ret.innerHTML = "";
+  try {
+    var ar = await fetch(AGT + "/ask_graph", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q, session_id: SESSION })
+    });
+    if (!ar.ok) { err.textContent = "问得太快了（限流），等一会儿再试"; ans.textContent = ""; return; }
+    var a = await ar.json();
+    if (a.status === "waiting_confirm") {
+      ans.textContent = "这个请求要删文档，演示站不处理删库操作。";
+    } else if (a.refused) {
+      ans.textContent = "（已拒答）" + a.answer;
+    } else {
+      ans.textContent = a.answer + (a.sources && a.sources.length ? "\n\n来源块：" + a.sources.join("、") : "");
+    }
+    var v = await (await fetch(RET + "/vector_search", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ q: q, top_k: 3 })
+    })).json();
+    var html = "<h2>检索详情</h2><p class='muted'>改写后：" + esc(v.rewritten_query)
+      + "　·　精排：" + (v.reranked ? "成功" : "失败，已退回 RRF 顺序") + "</p>";
+    v.results.forEach(function (r) {
+      html += "<div class='chunk'>[" + r.doc_id + " 块 " + r.chunk_id + "] 分数 <span class='score'>"
+        + r.score + "</span>\n" + esc(r.text.slice(0, 300)) + "</div>";
+    });
+    ret.innerHTML = html;
+  } catch (e) {
+    ans.textContent = "";
+    err.textContent = "连不上服务，请稍后再试";
+  }
+}
+
+// 防注入：把 < > & 转义再插进页面
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+</script>
+</body>
+</html>

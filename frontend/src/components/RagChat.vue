@@ -1,4 +1,3 @@
-
 <script setup lang="ts">
 import { serviceFetch } from '@/service/utils';
 import { globalState } from '@/globalState';  
@@ -49,37 +48,24 @@ const tryChat = async (
   model,
   inputMessage,
 ) => {
-  let response;
   buildFbId.value = uuidv4()
+  // 演示站没有登录/历史：sessionId 为空就现场生成一个，每个访客一个会话（session），
+  // 记忆（MemorySaver）和限流（每分钟 10 次）都是按它分的；千万别写成固定值
+  if (!sessionId.value) sessionId.value = uuidv4()
   try {
-    let data = {
-      input: inputMessage,
-      sessionId:sessionId.value,
-      history: chat_history.value,
-      stream: true,
-      increase: true,
-      feedbackId:buildFbId.value
-    }
-    let knowBaseData = {
-      input: inputMessage,
-      sessionId:sessionId.value,
-      history: processArray(chat_history.value),
-      stream: true,
-      increase: true,
-      feedbackId:buildFbId.value
-    }
-    if(knowBase.value){
-      response= await RagSessionService.chat(`/gpt/psllm/retrieval/completions?sessionId=${sessionId.value}`,knowBaseData)
-    }else {
-      response= await RagSessionService.chat(`/gpt/psllm/retrieval/chat?sessionId=${sessionId.value}`,data)
-    } 
+    // 普通 fetch 调咱们的 /ask_graph，一次 POST 返回整段 JSON（非流式）；
+    // 不用 RagSessionService.chat() 的 \0 流解析器（那个函数先留着，别的页面可能还在用）
+    const res = await fetch('/api/agt/ask_graph', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: inputMessage, session_id: sessionId.value })
+    })
+    if (!res.ok) return null
+    return await res.json()
   } catch (error) {
-    if (error.status_code === 404) {
-      response = await tryChat(model, inputMessage);
-      return response;
-    }
+    console.error('ask_graph failed:', error)
+    return null
   }
-  return response;
 };
 
 
@@ -111,7 +97,7 @@ const clickItem = (v) => {
 }
 const submitChat = async () => {
   if(generating.status) return 
-  if(!sessionId.value && !chat_history.value.length)   globalState.submitSession()
+  if(!sessionId.value && !chat_history.value.length && globalState.submitSession)   globalState.submitSession()
   if(!messageContent.value.trim()) return 
   if(messageContent.value.length > maxTokens) return message.warn('Limitation-Maximum input is 1200')
   generating.setStatus(true)
@@ -128,52 +114,31 @@ const submitChat = async () => {
   const response = await tryChat(currentModel.value, inputMessage);
   answerLoading.value = false;
   if (!response) {
-    // console.log("进来了")
+    // 请求失败：告诉用户一声，并把 Submit 按钮放开（不然 generating 一直卡住，按钮就点不了了）
+    append_message({ role: 'agent', content: storeData('请求失败，后端没响应，稍后再试。', [], []), feedbackId: buildFbId.value })
+    generating.setStatus(false)
     return;
   }
-  for await (const chunk of response) {
-    // console.log(chunk,'chunk')
-    const status = chunk.status
-    if (status === 'generating') {
-      if(chunk?.choices && knowBase.value){
-        referList.value= chunk?.choices[0]?.retrievals || [] // 引用
-      }
-      if(chunk?.suggestQuestions && !knowBase.value && Object.values(chunk?.suggestQuestions)){ 
-        questionsList.value= chunk?.suggestQuestions || [] // 快捷问答
-      }
-      currentOutputMessageContent.value += chunk.output ?? '';
-      // console.log(currentOutputMessageContent.value,'currentOutputMessageContent.value')
-      scrollToBottom(chatArea)
-    } else if (status === 'stop') {
-      currentOutputMessageContent.value += chunk?.output ?? '';
-      if(chunk?.choices && knowBase.value ){
-        questionsList.value=chunk?.choices[0]?.association.map(item=>item?.name) || []
-      }
-      append_message({ 
-        role: 'agent', 
-        content: storeData(currentOutputMessageContent.value,referList.value,questionsList.value),
-        feedbackId:buildFbId.value
-      })
-      if(questionsList.value.length){
-        questionsList.value.map(item=>{
-          messages.value.push({
-            role: 'phrase',
-            content: item
-          });
-        });
-      }
-      
-      if (chat_history.value.length < 1) {
-        refresh_sessions_handler()
-      }
-      append_history(inputMessage,storeData(currentOutputMessageContent.value,referList.value,questionsList.value),buildFbId.value)
-      currentOutputMessageContent.value = ''
-      questionsList.value = []
-      referList.value = []
-      generating.setStatus(false)
-      break
-    }
+  // waiting_confirm：图（graph）冻在删文档的确认关卡，演示站不处理删库操作
+  if (response.status === 'waiting_confirm') {
+    const text = '这个请求要删文档，演示站不处理删库操作。'
+    append_message({ role: 'agent', content: storeData(text, [], []), feedbackId: buildFbId.value })
+    if (chat_history.value.length < 1) refresh_sessions_handler()
+    append_history(inputMessage, storeData(text, [], []), buildFbId.value)
+    generating.setStatus(false)
+    return
   }
+  // 正常回答：refused=true 显示（已拒答）；来源和置信度直接拼进正文
+  let text = response.answer || ''
+  if (response.refused) {
+    text = '（已拒答）' + text
+  } else if (response.sources && response.sources.length) {
+    text += '\n\n来源：' + response.sources.join('、') + '（置信度 ' + response.confidence + '）'
+  }
+  append_message({ role: 'agent', content: storeData(text, [], []), feedbackId: buildFbId.value })
+  if (chat_history.value.length < 1) refresh_sessions_handler()
+  append_history(inputMessage, storeData(text, [], []), buildFbId.value)
+  generating.setStatus(false)
 };
 
 const append_message = (data) => {
@@ -335,10 +300,10 @@ const getFdInfo = (fbId)=>{
         <div v-for="(message, idx ) in messages" :key="message.content">
           <ChatMessage :message="agentParseData(message,'text')" :notNeedHeadImage="message.role==='phrase'" :isPhrase="message.role==='phrase'">
             <MarkdownRenderer :source="agentParseData(message,'text').content" @enterMessage="submitMessage" :isPhrase="message.role==='phrase'"/>
-            <div style="margin-left: 2rem;" class="refrence" >
+            <div class="refrence">
               <div v-for="ref in agentParseData(message,'refe').content">
-                <p dir = "auto" style="color: black">{{ ref.title }}</p>
-                <p :title="ref.content" style='overflow: hidden; white-space:nowrap;font-style: italic; text-overflow: ellipsis' dir = "auto">
+                <p dir="auto" class="ref-title">{{ ref.title }}</p>
+                <p :title="ref.content" class="ref-content" dir="auto">
                   {{ ref.content }}</p>
               </div>
               <div style="padding: 0 15px">
@@ -362,51 +327,50 @@ const getFdInfo = (fbId)=>{
         </div>
       </div>
     </div>
-    <div style="padding-left: 10px;">
-      <Checkbox v-model="knowBase" style="margin-right:10px;" :binary="true" /> 
-      <span >Chat with Knowledge Base</span>
+    <div class="chat-options">
+      <Checkbox v-model="knowBase" :binary="true" inputId="knowBase" />
+      <label for="knowBase">结合知识库回答</label>
     </div>
     <div id="inputArea">
-      <div style="position: relative;flex: 1;margin-right: 10px;">
+      <div class="input-wrap">
         <Textarea 
           v-model="messageContent"  
           @keyup.enter="submitChat" 
           id="chatInput" 
           :maxlength="knowBase ? maxTokens : null"
-          style="padding-bottom: 25px;" 
-          dir = "auto"
+          class="chat-textarea"
+          dir="auto"
+          placeholder="输入你的问题，Enter 发送…"
         /> 
         <!-- 计数器 -->
-        <span v-if="knowBase" style="position: absolute; bottom: 5px; right: 10px; font-size: 12px; color: gray;">
-          <span :class="messageContent.length>maxTokens && 'overCount' ">{{ messageContent.length }}</span>/{{maxTokens}}
+        <span v-if="knowBase" class="char-count">
+          <span :class="messageContent.length > maxTokens && 'overCount'">{{ messageContent.length }}</span>/{{ maxTokens }}
         </span>
       </div>
-      <Button  @click="commonPhrases" id="commonPhrases" label="Common Phrases" style="margin-right:5px;width:132px;font-size: 16px;"/>
-      <Button :disabled="generating.status ? true : undefined" @click="submitChat" style="width:132px;font-size: 16px;" label="Submit" id="submitButton"/>
-      <Dialog v-model:visible="visibleDialog" modal header="Common Phrases" style="width: 650px;z-index:900">
+      <Button @click="commonPhrases" id="commonPhrases" class="phrase-btn" icon="pi pi-bookmark" label="常用语" text />
+      <Button :disabled="generating.status ? true : undefined" @click="submitChat" class="submit-btn" icon="pi pi-send" label="发送" id="submitButton" />
+      <Dialog v-model:visible="visibleDialog" modal header="常用语管理" class="phrase-dialog" style="width: 620px;max-width: 92vw;">
         <PopoverConfirm ref="confirm" id="ragH_p"/>
         <div class="i_textA flex items-center gap-4 mb-4" >
           <Textarea v-model="phraseContent" id="phraseInput" dir="auto"/>
           <p class="add_phrase" @click="addPhrases">
-            <i class="pi pi-plus" style="font-size: 1.5rem ; color: #ffffff" />
+            <i class="pi pi-plus" />
           </p>
         </div>
-        <div style="max-height:460px;overflow-y: hidden;" >
-          <p 
-            v-for="(item, index) in phrasesList" 
-            class="defalut_phrase" 
+        <div class="phrase-list">
+          <div
+            v-for="(item, index) in phrasesList"
+            class="defalut_phrase"
             :key="index"
           >
-          <p 
-            @click="clickItem(item.phrases)"  
-            v-tooltip="`${index + 1}. ${item.phrases}`"
-            style="width: 90%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
-            dir="auto"
-          >
-            {{ `${index + 1}. ${item.phrases}` }}
-          </p>
-            <Button @click.stop="on_delete_session($event,item.id)" rounded text style="font-size: 1rem;color: #666666;" icon="pi pi-trash" />
-          </p>
+            <span
+              class="phrase-text"
+              @click="clickItem(item.phrases)"
+              v-tooltip="`${index + 1}. ${item.phrases}`"
+              dir="auto"
+            >{{ `${index + 1}. ${item.phrases}` }}</span>
+            <Button @click.stop="on_delete_session($event, item.id)" rounded text icon="pi pi-trash" aria-label="删除常用语" />
+          </div>
         </div>
       </Dialog>
     </div>
@@ -416,111 +380,175 @@ const getFdInfo = (fbId)=>{
 <style scoped>
 #chatBox {
   display: flex;
-  height: 100%;
   flex-direction: column;
-}
-
-.ragchat_page .phrase .refrence{
-  display: none;
-}
-
-.ragchat_page .userMessage  .refrence{
-  display: none;
-}
-
-::v-deep .ragchat_page .agentMessage .custom-icon{
-  width:36px;
-}
-
-::v-deep .ragchat_page  .agentMessage .w-full{
-  overflow: auto;
-}
-
-
-/* 悬浮时的背景色 */
-.hovered {
-  background-color: #f0f0f0;
-}
-.overCount{
-  color:red;
-}
-/* 点击后的背景色 */
-.clicked {
-  background-color: #dcdcdc;
-}
-#chatInput::placeholder {
-  color: rgba(0, 0, 0, 0.35);
-
-}
-.w-full .markdown-body{
-  background-color: transparent;
-}
-.item_padding {
-  padding: 5px;
-}
-.defalut_phrase{
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-.defalut_phrase:hover{
-  background: rgba(0, 0, 0, 0.1);
-  cursor: pointer;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
 }
 
 #chatContainer {
   position: relative;
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  height: 100%;
 }
 
 #chatArea {
   position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  right: 0;
+  inset: 0;
   overflow-y: auto;
-}
-.i_textA{
-  position:relative;
-  margin-bottom: 10px;
+  padding: 8px 4px 20px;
 }
 
-#phraseInput{
-  width: 100%;
-  height: 65px;
-  padding-right: 40px;
-  background-color: rgba(68,64,255,0.1);
-  border-radius: 9px;
+.refrence {
+  margin: 10px 0 4px 50px;
+  border-left: 2px solid var(--app-border);
+  padding-left: 12px;
+}
+.ref-title {
+  color: var(--app-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  margin: 2px 0;
+}
+.ref-content {
+  color: var(--app-text-3);
+  font-size: 12px;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0 0 6px;
 }
 
-.add_phrase{
-  background-color: rgba(149,148,255,1);
-  position: absolute;
-  width:32px;
-  height:32px;
-  border-radius: 16px;
-  right:9px;
-  top:17px;
+.chat-options {
   display: flex;
-  justify-content: center;
   align-items: center;
+  gap: 8px;
+  padding: 8px 10px 6px;
+  font-size: 13px;
+  color: var(--app-text-2);
+  user-select: none;
+}
+.chat-options label {
+  cursor: pointer;
 }
 
 #inputArea {
   display: flex;
-  height: 87px;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 8px 12px 14px;
+}
+.input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.chat-textarea {
   width: 100%;
-  padding: 10px;
+  min-height: 76px;
+  max-height: 180px;
+  resize: vertical;
+  padding: 12px 14px 26px;
+  border: 1px solid var(--app-border-strong);
+  background: var(--app-surface);
+  color: var(--app-text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.chat-textarea:focus {
+  border-color: var(--app-primary);
+  box-shadow: 0 0 0 3px var(--app-primary-ring);
+}
+#chatInput::placeholder {
+  color: var(--app-text-3);
+}
+.char-count {
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  font-size: 11px;
+  color: var(--app-text-3);
+  pointer-events: none;
+}
+.overCount {
+  color: var(--app-danger);
+  font-weight: 600;
 }
 
-#chatInput {
-  width: 100%;
-  height: 100%;
-  padding: 10px;
-  border-color:#BCD2FF;
-  resize: none;
+.phrase-btn.p-button {
+  height: 42px;
+  flex: 0 0 auto;
+  font-size: 13px;
+}
+.submit-btn.p-button {
+  height: 42px;
+  flex: 0 0 auto;
+  min-width: 96px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
+/* 常用语弹窗 */
+.i_textA {
+  position: relative;
+  margin-bottom: 16px;
+}
+#phraseInput {
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 48px 10px 12px;
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+  font-size: 14px;
+}
+.add_phrase {
+  position: absolute;
+  right: 8px;
+  top: 16px;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  border-radius: 50%;
+  background: var(--app-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.add_phrase:hover { background: var(--app-primary-hover); }
+.add_phrase i { font-size: 14px; color: #fff; }
+.defalut_phrase {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--app-text);
+}
+.defalut_phrase:hover { background: var(--app-surface-3); }
+.phrase-list { max-height: 460px; overflow-y: auto; }
+.phrase-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.hovered { background-color: var(--app-surface-3); }
+.clicked { background-color: var(--app-surface-3); }
+.item_padding { padding: 5px; }
+.w-full .markdown-body { background-color: transparent; }
+
+:deep(.ragchat_page .agentMessage .custom-icon) { width: 36px; }
+:deep(.ragchat_page .agentMessage .w-full) { overflow: auto; }
 </style>

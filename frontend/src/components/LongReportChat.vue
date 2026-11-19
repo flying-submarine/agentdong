@@ -393,12 +393,12 @@ const getFdInfo = (fbId)=>{
   width: 100%;
   height: 65px;
   padding-right: 40px;
-  background-color: rgba(68,64,255,0.1);
+  background-color: var(--app-primary-soft);
   border-radius: 9px;
 }
 
 .add_phrase{
-  background-color: rgba(149,148,255,1);
+  background-color: var(--app-primary);
   position: absolute;
   width:32px;
   height:32px;

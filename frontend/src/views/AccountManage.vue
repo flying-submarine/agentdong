@@ -287,7 +287,7 @@ const keyRef = ref(Math.random())
       width:373px !important;
       min-height: 40px;
       border: none;
-      background: rgba(68,64,255,0.1);
+      background: var(--app-primary-soft);
       .p-select-label {
         line-height: 26px;
       }
@@ -297,7 +297,7 @@ const keyRef = ref(Math.random())
           border: none;
           height: 40px;
           border-radius: 3px;
-        background: rgba(68,64,255,0.1);
+        background: var(--app-primary-soft);
           .ant-select-selection-item {
             line-height: 40px;
           }

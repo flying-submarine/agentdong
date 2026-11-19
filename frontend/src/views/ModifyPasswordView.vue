@@ -195,7 +195,7 @@
       font-weight: 500;
       font-size: 22px;
       letter-spacing: 0.19px;
-      text-shadow: 0 2px 4px rgba(87,79,215,0.20);
+      text-shadow: 0 2px 4px var(--app-primary-ring);
     }
     .input-user {
       margin-top: 8px;

@@ -740,7 +740,7 @@ watch(()=>news_chat.value.url, (newVal)=>{
 
 <style scoped>
 #chatBox {
-  box-shadow: 0 0 5px 2px rgba(87,79,215,0.10);
+  box-shadow: var(--app-shadow-sm);
   background-color: #fff;
   &::v-deep .p-tabpanels {
     padding-left: 0;

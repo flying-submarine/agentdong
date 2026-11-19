@@ -213,7 +213,7 @@ const getDepartmentList = async ()=>{
       font-weight: 500;
       font-size: 22px;
       letter-spacing: 0.19px;
-      text-shadow: 0 2px 4px rgba(87,79,215,0.20);
+      text-shadow: 0 2px 4px var(--app-primary-ring);
     }
     & .ant-form-item .ant-form-item-label >label.ant-form-item-required:not(.ant-form-item-required-mark-optional)::before {
       color: #fff;

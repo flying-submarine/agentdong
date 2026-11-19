@@ -10,7 +10,7 @@ import NewsChatBox from "@/components/NewsChatBox.vue";
 
 <template>
   <Splitter  class="news-box" :gutterSize="0">
-    <SplitterPanel :size="60" style="min-width: 594px;border-top-left-radius: 5px;border-bottom-left-radius: 5px;box-shadow: 0 0 5px 2px rgba(87,79,215,0.10);">
+    <SplitterPanel :size="60" style="min-width: 594px;border-top-left-radius: 5px;border-bottom-left-radius: 5px;box-shadow: var(--app-shadow-sm);">
       <News />
     </SplitterPanel>
     <SplitterPanel :size="40" style="background: #fff;border-top-right-radius: 5px;border-bottom-right-radius: 5px;">

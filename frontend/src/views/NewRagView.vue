@@ -1,51 +1,66 @@
 <script setup>
 import RagChat from '@/components/RagChat.vue'
 import RagHistory from '@/components/RagHistory.vue'
-
-import Splitter from "primevue/splitter";
-import SplitterPanel from "primevue/splitterpanel";
 import { ref } from "vue";
 
 const selectedEntry = ref(null);
-
 const updateSelectedEntry = (entry) => {
   selectedEntry.value = entry;
 };
 </script>
 
 <template>
-  <Splitter style="width: 100%;background: transparent;" class="rag_page" :gutterSize="25">
-    <SplitterPanel 
-      style="max-width: 220px; 
-      min-width: 220px;
-      box-shadow: 0 0 5px 2px rgba(87,79,215,0.10);
-      background-image: linear-gradient(160deg, #FEFFFF 0%, rgba(245,248,255,0.90) 100%);">
+  <div class="rag-page">
+    <aside class="rag-sidebar">
       <RagHistory :entry="selectedEntry" />
-    </SplitterPanel>
-    <SplitterPanel class="ragContent">
-      <RagChat :onEntrySelect="updateSelectedEntry"/>
-    </SplitterPanel>
-  </Splitter>
+    </aside>
+    <section class="rag-content">
+      <RagChat :onEntrySelect="updateSelectedEntry" />
+    </section>
+  </div>
 </template>
 
-<style>
+<style scoped>
+.rag-page {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
 
-  .rag_page {
-    height: calc(100vh - 94px);
-  }
+.rag-sidebar {
+  width: 240px;
+  flex: 0 0 240px;
+  min-height: 0;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  box-shadow: var(--app-shadow-sm);
+  overflow: hidden;
+  display: flex;
+}
 
-  .rag_page .p-splitterpanel {
-    border-radius: 5px;
-  }
+.rag-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  box-shadow: var(--app-shadow-sm);
+  overflow: hidden;
+  display: flex;
+}
 
-  .rag_page > div:nth-child(2){
-    background: #D9D4FC;;
+@media (max-width: 960px) {
+  .rag-page {
+    flex-direction: column;
   }
-  .ragContent {
-    background-image: url('@/assets/IconRagContent.png'); /* 使用@作为绝对路径的起点 */
-    box-shadow: 0 0 5px 2px rgba(87,79,215,0.10);
-    border-radius: 5px;
-    background-color: #fff;
+  .rag-sidebar {
+    width: 100%;
+    flex: 0 0 auto;
+    max-height: 240px;
   }
- 
+}
 </style>

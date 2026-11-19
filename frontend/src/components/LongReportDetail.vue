@@ -121,7 +121,7 @@ const navPdfIndex = (i) => {
 <template>
   <div class='logR-detail'>
     <div class="logR-detail-header" >
-        <i class="pi pi-arrow-circle-left"  @click="navigateToPage" style="font-size: 22px;color:rgba(87,79,215,1);"/>
+        <i class="pi pi-arrow-circle-left"  @click="navigateToPage" style="font-size: 22px;color:var(--app-primary);"/>
         <a-tooltip placement="rightTop" :title="detailInfo.fileName">
           <span 
             style="
@@ -183,7 +183,7 @@ const navPdfIndex = (i) => {
                 <span style="font-size: 12px;font-weight: 400;">
                   Regenerate around 
                 </span>
-                <a-input-number style="background: rgba(87,79,215,0.07);border: 0.5px solid #BCD2FF;"  size="small" id="wordsNumber" v-model:value="words" :min="1" :max="3000" />
+                <a-input-number style="background: var(--app-primary-soft);border: 0.5px solid #BCD2FF;"  size="small" id="wordsNumber" v-model:value="words" :min="1" :max="3000" />
                 <span style="font-size: 12px;font-weight: 400;">
                   words
                 </span>
@@ -240,7 +240,7 @@ const navPdfIndex = (i) => {
 <style scoped>
 .logR-detail {
   background-image: url('@/assets/IconRagContent.png');
-  box-shadow: 0 0 5px 2px rgba(87,79,215,0.10);
+  box-shadow: var(--app-shadow-sm);
   border-radius: 5px;
   /* height: 100%; */
   background-color: #fff;
@@ -283,13 +283,13 @@ const navPdfIndex = (i) => {
 }
 
 .logR-tab > p.active {
-  border-bottom: 2px solid rgba(87,79,215,1);
+  border-bottom: 2px solid var(--app-primary);
   background: none;
 }
 
 .logR-tab-content{
   margin:12px 0 ;
-  background-color: rgba(87,79,215,0.07);
+  background-color: var(--app-primary-soft);
   border-radius: 5px;
   height:calc(100vh - 206px);
 }

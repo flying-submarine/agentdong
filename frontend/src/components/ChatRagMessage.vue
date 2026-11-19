@@ -880,78 +880,81 @@ const evaluate = ref('')
 <style scoped>
 .message {
   display: flex;
-  justify-content: flex-start;
-  padding: 10px;
-  margin: 10px;
-  border-radius: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  margin: 8px 0;
+  border-radius: var(--app-radius);
   position: relative;
-  &.cardMessage {
-    padding: 0;
-    margin: 0;
-  }
-  &.cardAgentMessage {
-    margin: 0;
-    padding: 0;
-  }
+}
+.message.cardMessage { padding: 0; margin: 0; }
+.message.cardAgentMessage { margin: 0; padding: 0; }
+
+.userAvatar,
+.agentAvatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  flex: 0 0 34px;
+  object-fit: cover;
+  margin-right: 12px;
 }
 
-
-.userAvatar,.agentAvatar  {
-  /* background-color: var(--primary-200); */
-  /* background-color: #34D2CB; */
-  width: 46px;
-  height: 46px;
-  border-radius: 2rem;
-  margin-right: 14px;
-}
 .w-full {
-    flex: 1;
-    overflow: auto;
+  flex: 1;
+  min-width: 0;
 }
-.userMessage .w-full{
-  background-color: rgba(87,79,215,0.25);
-  box-shadow: 0 0 5px 5px #F3F6FB;
-  border-radius: 3px;
+
+/* 用户消息：靛蓝气泡 + 白字，高对比 */
+.userMessage .w-full {
+  background: var(--app-primary);
+  color: #fff;
+  border-radius: 4px 14px 14px 14px;
+  padding: 12px 16px;
+  box-shadow: var(--app-shadow-sm);
 }
-.w-full .markdown-body{
+.userMessage .w-full,
+.userMessage .w-full .markdown-body {
+  color: #fff;
+}
+.userMessage .w-full code {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+.userMessage .w-full pre {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* 助手消息：白底卡片 + 深色文字 */
+.agentMessage .w-full,
+.cardAgentMessage .w-full {
+  background: var(--app-surface);
+  color: var(--app-text);
+  border: 1px solid var(--app-border);
+  border-radius: 4px 14px 14px 14px;
+  padding: 12px 16px;
+  box-shadow: var(--app-shadow-sm);
+}
+.w-full .markdown-body {
   background-color: transparent;
 }
 
-.agentMessage .w-full{
-  background-color: rgba(176,176,218,0.2);
-  box-shadow: 0 0 5px 5px #F3F6FB;
-  border-radius: 3px;
+.agentMessage .phrase {
+  margin-top: -20px;
+  border-radius: 14px;
+  margin-left: 46px;
 }
-
-.cardAgentMessage .w-full{
-  background-color: rgba(176,176,218,0.2);
-  box-shadow: 0 0 5px 5px #F3F6FB;
-  border-radius: 3px;
-}
-
 
 .translate-button {
   position: absolute !important;
-  /* 绝对定位 */
   bottom: 10px;
-  /* 距离顶部的距离 */
   right: 10px;
-  /* 距离右侧的距离 */
   z-index: 10;
-  /* 确保按钮在最上层 */
 }
-
 .dynamic-width-popover {
   min-height: 50px;
-  /* 你的最小宽度 */
   max-height: 200px;
-  /* 你的最大宽度 */
   overflow: auto;
 }
-.popup{
-  position: absolute;
-}
-.highlighted-text {
-  background-color: yellow;
-}
+.popup { position: absolute; }
+.highlighted-text { background-color: #fde68a; }
 </style>

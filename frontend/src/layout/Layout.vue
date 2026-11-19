@@ -1,52 +1,61 @@
 <template>
-  <Splitter style="width: 100%;border: none;background: #D9D4FC;" :gutterSize="0" layout="vertical">
-    <SplitterPanel style="max-height: 50px; min-height: 50px;">  
-      <div class="header" style="height: 50px;line-height: 50px;font-size: 30px;color: #fff">
-        <img :src="LogoImg" style="margin-left: 11px;height:24px"/>
-      </div>
-    </SplitterPanel>
-    <SplitterPanel>
-      <Splitter :gutterSize="0">
-        <SplitterPanel style="max-width: 200px; min-width: 200px;">
-          <!-- <div v-show="!collapsed" class="sidebar-header">
-            <img src="@/assets/qianwen.png" alt="logo">
-            Wakeb GPT
-          </div> -->
-          <div class="left-spliter" style="display: flex;flex-direction: column; justify-content: space-between;">
-            <Menu class="custom-menu" :model="items" :baseZIndex="0">
-              <template #item="{ item, props }" >
-                <router-link v-if="item.menu" v-slot="{ href, navigate }" :to="item.url" custom>
-                  <a  v-bind="props.action" @click="handleNavigation(navigate)"  :class="getActive(item.url)">
-                    <img :src="getImage(item.url)" style="height: 16px; flex-shrink: 0;margin-top: 4px" alt="logo">
-                    <span class="ml-2">{{ item.label }}</span>
-                  </a>
-                </router-link>
-              </template>
-            </Menu>
-            <div class="menu-footer">
-              <div style="display:flex">
-                <img src="@/assets/admin_icon.png" style="height: 18px;" alt="logo">
-                <!-- <input style="width: 60px;" v-model="username" @change="change_user_name" /> -->
-                <span style="margin-left: 9px;">{{username}}</span>
-                <span style="margin-left: 25px;cursor: pointer;" @click="logout">Logout</span>
-              </div>
-              <div style="margin-top: 22px" v-if="isAdmin">
-                <router-link v-slot="{ href, navigate }" to="/bussiness/AccountManage" custom>
-                  <a  @click.prevent="handleNavigation(navigate)"  class="account-item" :class="getActive('/bussiness/AccountManage')">
-                    <img :src="getImage('/bussiness/AccountManage')" style="height: 18px; flex-shrink: 0;" alt="logo">
-                    <div class="account ml-2">Account Management</div>
-                  </a>
-                </router-link>
-              </div>
-            </div>
-          </div>
-        </SplitterPanel>
-        <SplitterPanel class="center-bg">
-          <router-view></router-view>
-        </SplitterPanel>
-      </Splitter>
-    </SplitterPanel>
-  </Splitter>
+  <div class="app-shell">
+    <header class="app-header">
+      <img :src="LogoImg" class="app-logo" alt="Wakeb GPT" />
+      <span class="app-tagline">企业知识库问答</span>
+      <div class="app-header-spacer"></div>
+      <span class="app-header-user">
+        <span class="user-dot">{{ (username || 'U').charAt(0).toUpperCase() }}</span>
+        {{ username }}
+      </span>
+    </header>
+
+    <div class="app-body">
+      <aside class="app-sidebar">
+        <nav class="side-nav">
+          <router-link
+            v-for="item in items"
+            :key="item.url"
+            v-slot="{ navigate }"
+            :to="item.url"
+            custom
+          >
+            <a
+              class="side-nav-item"
+              :class="getActive(item.url)"
+              href="javascript:void(0)"
+              @click="handleNavigation(navigate)"
+            >
+              <img :src="getImage(item.url)" class="side-nav-icon" alt="" />
+              <span class="side-nav-label">{{ item.label }}</span>
+            </a>
+          </router-link>
+        </nav>
+
+        <div class="side-footer">
+          <router-link v-if="isAdmin" v-slot="{ navigate }" to="/bussiness/AccountManage" custom>
+            <a
+              href="javascript:void(0)"
+              class="side-nav-item account-item"
+              :class="getActive('/bussiness/AccountManage')"
+              @click.prevent="handleNavigation(navigate)"
+            >
+              <img :src="getImage('/bussiness/AccountManage')" class="side-nav-icon" alt="" />
+              <span class="side-nav-label">Account Management</span>
+            </a>
+          </router-link>
+          <button class="logout-btn" @click="logout">
+            <i class="pi pi-sign-out"></i>
+            <span>退出登录</span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="app-main">
+        <router-view></router-view>
+      </main>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -181,196 +190,180 @@ const initInfo = ()=>{
 initInfo();
 </script>
 <style>
-/* @import './base.css'; */
-.header {
-  position: fixed;
-  left: 0;
+/* ---------------- 应用外壳 ---------------- */
+.app-shell {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg);
+}
+
+.app-header {
+  position: sticky;
   top: 0;
-  width: 100%;
-  height: 50px;
-  background: url('../assets/headerBg.png');
-  z-index: 20;
+  z-index: 30;
+  height: 60px;
+  flex: 0 0 60px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 24px;
+  background: #111827;
+  color: #fff;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-.left-spliter {
-  position: fixed;
-  left: 0;
-  top: 50px;
-  max-width: 200px;
-  min-width: 200px;
-  background: url('../assets/leftBg.png');
-  height: calc(100vh - 50px);
-  box-shadow: 0 0 20px 5px rgba(14,66,210,0.25);
-  z-index: 8;
-  .active-menu {
-    color: var(--p-primary-500);
-  }
+.app-logo {
+  height: 22px;
+  width: auto;
 }
-.menu-footer {
-  position: relative;
-  bottom: 24px;
-  left: 13px;
-  font-size: 14px;
-  .account-item {
-    color: rgb(51, 65, 85);
-    font-size: var(--menu-font-size);
-    font-weight: 600;
-    padding: 0;
-    &:hover {
-      background: transparent;
-    }
-    &.active-menu {
-      color: var(--p-primary-500);
-    }
-    .account {
-      display: inline-block;
-      vertical-align: middle;
-      margin-top: -8px;
-      font-weight: 600;
-      font-size: 14px;
-    }
-  }
+.app-tagline {
+  font-size: 12px;
+  color: #9ca3af;
+  padding-left: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+  letter-spacing: 0.02em;
 }
-.custom-menu {
-  border: none !important; 
-  font-size: var(--menu-font-size);
+.app-header-spacer {
+  flex: 1;
+}
+.app-header-user {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: #e5e7eb;
+}
+.user-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--app-primary);
+  color: #fff;
+  font-size: 12px;
   font-weight: 600;
-  background: transparent !important;
-  --p-menu-item-focus-color: #8b5cf6;
-  .p-menu-list {
-    padding: 0;
-  }
 }
 
-.p-menu-item-link {
-  background-color: var(--surface-0);
-  color: var(--text-color);
-  transition: background-color 0.3s, color 0.3s;
-  margin: 0 34px 0 13px;
-  padding: 22px 0 22px 0 !important;
-  border-bottom: 0.5px solid rgba(151,151,151,0.6);
-  align-items: start !important;
-  line-height: 22px;
-  letter-spacing: 0.14px;
-}
-.p-menu-item.p-focus .p-menu-item-content {
-  background-color: transparent !important;
-}
-.p-menu-item:not(.p-disabled) .p-menu-item-content:hover {
-  background-color: transparent !important;
-  color: var(--p-menu-item-focus-background);
-}
-/* 更改 hover 和选中状态的颜色 */
-.p-menu-item-link:hover,
-.p-menu-item-link:active,
-.p-menu-item-link-active {
-  background-color: var(--primary-color) !important;
-  color: var(--primary-color-text) !important;
-}
-
-.p-panelmenu {
-  gap: 0 !important;
-}
-
-.p-panelmenu-panel {
-  border: none !important;
-  ;
-}
-
-/* .p-panelmenu-header-content:hover,
-.p-panelmenu-item-content:hover {
-  background-color: rgb(223, 203, 203) !important;
-} */
-
-body {
+/* ---------------- 主体 ---------------- */
+.app-body {
+  flex: 1;
   display: flex;
-  place-items: center;
+  min-height: 0;
 }
 
-#app {
-  margin: 0 auto;
-  font-weight: normal;
-  min-height: calc(100vh - 16px);
-  width: 100%;
+.app-sidebar {
+  width: 216px;
+  flex: 0 0 216px;
+  background: var(--app-surface);
+  border-right: 1px solid var(--app-border);
   display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 18px 12px 16px;
+  min-height: calc(100vh - 60px);
 }
 
-main {
-  width: 100%;
-  min-height: calc(100vh - 16px);
+.side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
-
-a,
-.green {
+.side-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: var(--app-radius-sm);
+  color: var(--app-text-2);
+  font-size: 14px;
+  font-weight: 500;
   text-decoration: none;
-  color: hsla(160, 100%, 37%, 1);
-  transition: 0.4s;
-  padding: 3px;
+  transition: background 0.15s, color 0.15s;
+  position: relative;
+}
+.side-nav-item:hover {
+  background: var(--app-surface-3);
+  color: var(--app-text);
+}
+.side-nav-item.active-menu {
+  background: var(--app-primary-soft);
+  color: var(--app-primary);
+  font-weight: 600;
+}
+.side-nav-item.active-menu::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--app-primary);
+}
+.side-nav-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  object-fit: contain;
+}
+.side-nav-label {
+  flex: 1;
+  line-height: 1.35;
 }
 
-.center-bg {
-  background: #D9D4FC;
-  background-size: cover;
-  padding: 21px 15px;
+.side-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--app-border);
+}
+.account-item {
+  color: var(--app-text-2);
+}
+.logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  margin-top: 2px;
+  border: 0;
+  border-radius: var(--app-radius-sm);
+  background: transparent;
+  color: var(--app-text-3);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.logout-btn:hover {
+  background: #fef3f2;
+  color: var(--app-danger);
 }
 
-@media (hover: hover) {
-  a:hover {
-    background-color: hsla(160, 100%, 37%, 0.2);
-  }
+.app-main {
+  flex: 1;
+  min-width: 0;
+  min-height: calc(100vh - 60px);
+  padding: 20px;
+  background: var(--app-bg);
+  overflow: auto;
 }
 
+/* 兼容旧样式引用 */
+.custom-menu { display: none; }
 .p-datatable-filter-constraint-dropdown {
   display: none !important;
 }
-
-.sidebar-header {
-  display: flex;
-  align-items: center;
-  padding: 20px;
-  font-weight: bold;
-  color: #007bfc;
-}
-
-.sidebar-header img {
-  width: 30px;
-  height: 30px;
-  margin-right: 10px;
-}
-
-#components-layout-demo-custom-trigger .trigger {
-  font-size: 12px;
-  line-height: 64px;
-  padding: 0 24px;
-  cursor: pointer;
-  transition: color 0.3s;
-}
-
-#components-layout-demo-custom-trigger .trigger:hover {
-  color: #1890ff;
-}
-
-#components-layout-demo-custom-trigger .logo {
-  height: 32px;
-  background: rgba(255, 255, 255, 0.2);
-  margin: 16px;
-}
-
-
-.compact-table .p-datatable-tbody>tr>td {
-  padding: 4px 8px;
-  font-size: 12px;
-}
-
-.compact-table .p-datatable-tbody>tr {
-  height: 24px;
-}
-
-.menu-item-text {
-  white-space: normal !important;
-  overflow: visible !important;
-  text-overflow: clip !important;
-  /* ���߲������������ */
-
+.compact-table .p-datatable-tbody > tr > td {
+  padding: 6px 10px;
+  font-size: 13px;
 }
 </style>
 

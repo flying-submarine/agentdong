@@ -7,18 +7,13 @@
     color:rgba(39,38,54,0.6)!important;
 }
 .p-popover .p-button-danger{
-  background-image: linear-gradient(180deg, #BB77F3 0%, #6868F5 100%)!important;
-  border-radius: 2px!important;
+  background: var(--app-primary)!important;
+  border-radius: 8px!important;
   border:none!important;
 }
 .p-popover .p-button-danger:hover{
-  background-image: linear-gradient(180deg, #7c3aed 0%, #7c3aed 100%)!important;
-  border-radius: 2px!important;
-  border:none!important;
-}
-.p-popover .p-button-danger{
-  background-image: linear-gradient(180deg, #BB77F3 0%, #6868F5 100%)!important;
-  border-radius: 2px!important;
+  background: var(--app-primary-hover)!important;
+  border-radius: 8px!important;
   border:none!important;
 }
 .p-popover .p-button-secondary{
@@ -38,18 +33,18 @@
 }
 .logR-message-content a:hover{
   background-color: transparent;
-  color: #7c3aed!important;
+  color: var(--app-primary-hover)!important;
 }
 .ragH_p .p-dialog-header .p-dialog-header-actions{
   display: none;
 }
 .ragH_p .p-dialog-footer .p-button-danger{
-  background:#8b5cf6!important; 
-  border-color:#8b5cf6!important;
+  background:var(--app-primary)!important; 
+  border-color:var(--app-primary)!important;
 }
 .ragH_p .p-dialog-footer .p-button-danger:hover{
-  background:#7c3aed!important; 
-  border-color:#7c3aed!important;
+  background:var(--app-primary-hover)!important; 
+  border-color:var(--app-primary-hover)!important;
 }
 
 .longR-Dialog .p-dialog-header-actions{

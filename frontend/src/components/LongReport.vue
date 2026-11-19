@@ -80,7 +80,7 @@ const handleChange = (info) => {
     message.success({
       content: h('span', { class: 'logR-message-content' }, [
         `${info.file.name.length > 15 ? info.file.name.substring(0,13) + '...' : info.file.name} file uploaded successfully `,
-        h('a', { href: '#', onClick: () => navDetail(), style: 'color:#7c3aed; text-decoration: underline;' }, 'Check now')
+        h('a', { href: '#', onClick: () => navDetail(), style: 'color:var(--app-primary); text-decoration: underline;' }, 'Check now')
       ]),
       duration: 5
     });
@@ -216,7 +216,7 @@ const onDialogHide = ()=>{
 
 .longReport-page{
   background-image: url('@/assets/IconRagContent.png');
-  box-shadow: 0 0 5px 2px rgba(87,79,215,0.10);
+  box-shadow: var(--app-shadow-sm);
   border-radius: 5px;
   background-color: #fff;
   padding: 22px 34px 22px;
@@ -244,7 +244,7 @@ const onDialogHide = ()=>{
 .upload-btn span{
   margin-top:15px;
   font-size:22px;
-  color:rgba(87,79,215,0.8);
+  color:var(--app-primary);
   letter-spacing: 0.33px;
   font-weight:400px;
   line-height: 30px;
@@ -315,7 +315,7 @@ const onDialogHide = ()=>{
   position: relative;
   margin: 0 2.5px; 
   background-color: rgba(164, 186, 224, 0.25);
-  box-shadow: 0 0 5px 5px #F3F6FB;
+  box-shadow: 0 0 5px 5px transparent;
   border-radius: 3px;
   word-break: break-word; /* 允许在单词内部换行 */
   font-size:14px;
@@ -329,7 +329,7 @@ const onDialogHide = ()=>{
   line-height: 122px;
   margin: 0 2.5px; 
   background-color: rgba(87, 79, 215, 0.2);
-  box-shadow: 0 0 5px 5px #F3F6FB;
+  box-shadow: 0 0 5px 5px transparent;
   border-radius: 3px;
 }
 .record-date {

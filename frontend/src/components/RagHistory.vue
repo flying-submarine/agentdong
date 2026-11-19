@@ -114,45 +114,151 @@ const on_delete_session = (sid) => {
 
 <template>
   <ConfirmDialog v-model:visible="confirmDialogVisible" style="width: 500px;" class="ragH_p" ></ConfirmDialog>
-  <div class=" flex flex-column align-items-center p-2 w-full" >
-    <Button class="w-12 " icon="pi pi-plus" label="Add Session" :disabled="generating.status" style="font-size: 16px;" @click="on_add_session" />
-    <div class="flex flex-column mt-5 w-full ">
-      <div 
-        @click="select_session(ss)" v-for="ss in sessions"
-        :style="generating.status ? { cursor: 'not-allowed' } : { }"
-        :class="{ 'his-item flex w-full justify-content-between align-items-center pl-2 pr-2 w-full': true, active: ss.id === current_session?.id }"
+  <div class="history-panel">
+    <div class="history-head">
+      <h2 class="history-title">对话历史</h2>
+      <span class="history-count">{{ sessions.length }}</span>
+    </div>
+
+    <div class="history-actions">
+      <Button
+        class="new-session-btn"
+        icon="pi pi-plus"
+        label="新建会话"
+        :disabled="generating.status"
+        @click="on_add_session"
+      />
+    </div>
+
+    <div class="history-list">
+      <p v-if="!sessions.length" class="history-empty">还没有会话，点击上方新建</p>
+      <div
+        v-for="ss in sessions"
+        :key="ss.id"
+        class="his-item"
+        :class="{ active: ss.id === current_session?.id, disabled: generating.status }"
+        @click="select_session(ss)"
       >
         <a-tooltip placement="rightTop" :title="ss.title">
-          <p style="width: 80%; white-space: nowrap;overflow: hidden; text-overflow: ellipsis;">{{ ss.title }}</p>
+          <i class="pi pi-comments his-icon"></i>
+          <span class="his-label">{{ ss.title }}</span>
         </a-tooltip>
-        <Button @click.stop="on_delete_session(ss.id)" text rounded style="color:#555" icon="pi pi-trash" />
+        <Button
+          class="his-delete"
+          @click.stop="on_delete_session(ss.id)"
+          text
+          rounded
+          icon="pi pi-trash"
+          aria-label="删除会话"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <style>
-
-.his-item:hover {
-  background: rgba(0, 0, 0, 0.1);
-  cursor: pointer;
+.history-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  padding: 18px 12px;
 }
-
-.his-item{
-  opacity: 0.8;
-  height: 40px;
+.history-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+}
+.history-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+.history-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--app-surface-3);
+  color: var(--app-text-2);
   font-size: 12px;
-  line-height: 16px;
-  font-weight: 400;
+  line-height: 20px;
+  text-align: center;
+}
+.history-actions {
+  padding: 16px 4px 18px;
+}
+.new-session-btn.p-button {
+  width: 100%;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  height: 40px;
+}
+.history-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.history-empty {
+  padding: 24px 8px;
+  text-align: center;
+  color: var(--app-text-3);
+  font-size: 13px;
+}
+.his-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 8px 8px 10px;
+  border-radius: 8px;
+  color: var(--app-text-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.his-item:hover {
+  background: var(--app-surface-3);
+}
+.his-item.active {
+  background: var(--app-primary-soft);
+  color: var(--app-primary);
+  font-weight: 600;
+}
+.his-item.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.his-icon {
+  font-size: 13px;
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+.his-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
   overflow: hidden;
-  color:#9BA0AA;
   text-overflow: ellipsis;
-  letter-spacing: 0.14px;
-  border-radius: 5px;
 }
-
-.active {
-  background: rgba(0, 0, 0, 0.1);
+.his-delete.p-button {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  color: var(--app-text-3);
+  opacity: 0;
 }
-
+.his-item:hover .his-delete.p-button {
+  opacity: 1;
+}
+.his-delete.p-button:hover {
+  color: var(--app-danger);
+  background: #fef3f2;
+}
 </style>

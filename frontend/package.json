@@ -14,7 +14,7 @@
   "dependencies": {
     "@ckeditor/ckeditor5-build-classic": "^41.4.2",
     "@ckeditor/ckeditor5-vue": "^5.1.0",
-    "@primevue/themes": "^4.5.3",
+    "@primevue/themes": "^4.5.4",
     "@tanstack/vue-query": "^5.62.0",
     "ant-design-vue": "^4.2.6",
     "codemirror": "^5.65.21",
@@ -33,7 +33,7 @@
     "pinia": "^4.1.0",
     "primeflex": "^4.0.0",
     "primeicons": "^8.0.2",
-    "primevue": "^5.0.5",
+    "primevue": "^4.5.5",
     "prismjs": "^1.30.0",
     "turndown": "^7.2.5",
     "uuid": "^14.0.3",

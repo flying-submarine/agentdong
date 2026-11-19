@@ -52,7 +52,7 @@ const emitMessge = ()=>{
   background-color: inherit;
   /* white-space: pre-wrap; */
   overflow-wrap: break-word;
-  font-size: 12px;
+  font-size: 14px;
   padding: 10px 15px;
   /* white-space: wrap; */
   /* 保留空白符，自动换行 */

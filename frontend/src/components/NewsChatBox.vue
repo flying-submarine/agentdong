@@ -596,7 +596,7 @@ import FeedBack from "./FeedBack.vue";
   flex-direction: column;
   background: #fff;
   margin: 13px 16px;
-  box-shadow: 0 0 5px 2px rgba(87,79,215,0.10);
+  box-shadow: var(--app-shadow-sm);
   border-radius: 5px;
   height: calc(100% - 26px);
 }

@@ -16,6 +16,7 @@
 import os  # 读环境变量：DeepSeek key 和检索服务地址
 import re  # 正则：从工具结果里抠出"分数 0.9487"这样的数字
 import httpx  # 发 HTTP 请求：调 8002 的 /vector_search
+import json  # 解析 JSON：_answer_so_far 从半截 JSON 里抠 answer 字段（流式用）
 from contextvars import ContextVar  # 请求级变量：角色跟着这次请求走，工具里能读到，不同请求之间不串
 from typing import Annotated, TypedDict  # TypedDict：定义图的状态结构；Annotated：给 messages 加累加规则
 from pydantic import BaseModel, ConfigDict, Field, field_validator  # 定义 RagAnswer 结构 + 进来先归一化的校验器
@@ -255,16 +256,19 @@ def score_node(state: GraphState):
     return {"best_score": max(state.get("best_score", 0.0), top)}
 
 
-def finalize_node(state: GraphState):
+async def finalize_node(state: GraphState):
     """收尾节点：先按分数硬拦——最高分低于拒答线，直接出 refused，不用模型猜；
     分数够了才调模型，用 RagAnswer 结构出答案（模型自己觉得块不够也可以填 refused=true）。
-    校验失败不炸服务：把模型原样打到日志里，回一个 refused，请人去日志里看原样。"""
+    校验失败不炸服务：把模型原样打到日志里，回一个 refused，请人去日志里看原样。
+    流式版（M5 第 3 步）：用 llm_json.astream() 一个 token 一个 token 收，拼成整段 JSON 再校验——
+    校验逻辑和原来一模一样，只是 invoke() 换成了 astream()；节点改 async 后，整张图得用 ainvoke/astream 跑。"""
     best = state.get("best_score", 0.0)
     if best < REFUSAL_THRESHOLD:
         ans = RagAnswer(refused=True, answer="知识库里没有相关内容，换个问法试试。", sources=[], confidence=0.0)
         return {"messages": [AIMessage(content=ans.model_dump_json())]}
-    resp = llm_json.invoke([SystemMessage(content=JSON_SYSTEM_PROMPT)] + state["messages"])
-    raw = resp.content
+    raw = ""
+    async for chunk in llm_json.astream([SystemMessage(content=JSON_SYSTEM_PROMPT)] + state["messages"]):
+        raw += chunk.content or ""
     try:
         ans = RagAnswer.model_validate_json(raw)
     except Exception as e:
@@ -336,18 +340,19 @@ builder.add_edge("delete_done", END)
 graph_app = builder.compile(checkpointer=MemorySaver())
 
 
-def run_agent(question: str, thread_id: str = "default", role: str | None = None):
+async def run_agent(question: str, thread_id: str = "default", role: str | None = None):
     """跑一轮问答：返回 (RagAnswer 或 None, 本轮查了几轮, 等待确认的信息或 None)。
     role 是调用方角色（比如 "运维"）：只影响这次问答能看到哪些文档，存在 ContextVar 里给 search_kb 用。
     thread_id 相同就是同一轮对话，记得住上文。
-    best_score 每问一次重新算（invoke 里传 0.0 盖掉上一轮的），不然上一轮的高分会让这轮的陷阱题蒙混过关。
+    best_score 每问一次重新算（ainvoke 里传 0.0 盖掉上一轮的），不然上一轮的高分会让这轮的陷阱题蒙混过关。
     查了几轮现在也是本轮的数（count_searches 只数最后一条 HumanMessage 之后），不是整个 thread 的累计。
-    注意：图在确认关卡冻住时，invoke 返回的状态里有 __interrupt__，这时还没有最终答案，
+    注意：图在确认关卡冻住时，ainvoke 返回的状态里有 __interrupt__，这时还没有最终答案，
     不能按 RagAnswer 去解析最后一条消息（那条是带 tool_calls 的 AI 消息，不是 JSON）——先返回等待确认。
-    recursion_limit 从 10 提到 15：多了 gate 关卡节点，两轮问答要走 10 步，留点余量。"""
-    token = _current_role.set(role)  # 设定本次角色；invoke 跑完（或抛异常）都在 finally 里清空
+    recursion_limit 从 10 提到 15：多了 gate 关卡节点，两轮问答要走 10 步，留点余量。
+    M5 第 3 步改 async：finalize 节点改用 astream 后，同步的 invoke() 不能再跑这张图，改成 await ainvoke()。"""
+    token = _current_role.set(role)  # 设定本次角色；ainvoke 跑完（或抛异常）都在 finally 里清空
     try:
-        result = graph_app.invoke(
+        result = await graph_app.ainvoke(
             {"messages": [HumanMessage(question)], "best_score": 0.0},
             {"configurable": {"thread_id": thread_id}, "recursion_limit": 15},
         )
@@ -361,10 +366,11 @@ def run_agent(question: str, thread_id: str = "default", role: str | None = None
         _current_role.reset(token)
 
 
-def resume_agent(thread_id: str, approved: bool):
+async def resume_agent(thread_id: str, approved: bool):
     """人点了头（或点了否）之后续上被冻住的图：返回和 run_agent 一样的三件套。
-    approved=True 放行去删，False 取消。一次删除最多停一次，续上之后不会再停。"""
-    result = graph_app.invoke(
+    approved=True 放行去删，False 取消。一次删除最多停一次，续上之后不会再停。
+    M5 第 3 步改 async：和 run_agent 同一个原因，invoke() 换成 await ainvoke()。"""
+    result = await graph_app.ainvoke(
         Command(resume=approved),
         {"configurable": {"thread_id": thread_id}, "recursion_limit": 15},
     )
@@ -374,3 +380,78 @@ def resume_agent(thread_id: str, approved: bool):
         return None, rounds, interrupts[0].value
     ans = RagAnswer.model_validate_json(result["messages"][-1].content)
     return ans, rounds, None
+
+
+def _answer_so_far(raw: str) -> str:
+    """从流出来的半截 JSON 里抠 answer 字段的当前值。
+    整段到了就直接 json.loads 取 answer；半截就找到 "answer": " 之后的内容，
+    补一个引号再解码（转义字符由 json.loads 处理）；半截转义（比如 \\u 切一半）
+    会抛错，这时返回 ""，调用方留着上一次的结果、等下一块。
+    注意两种收尾：answer 的后引号还没到，补一个引号解；后引号已经到了（比如刚好切在
+    "answer": "...." 的后引号上），就直接解，不再补——补了会多一个引号、解不出来，
+    表现就是答案最后一个字出不来。这个坑是自测时真抓到的（切点 48）。"""
+    try:
+        return json.loads(raw).get("answer", "")
+    except Exception:
+        pass
+    i = raw.find('"answer"')
+    if i < 0:
+        return ""
+    j = raw.find(":", i)
+    k = raw.find('"', j)
+    if k < 0:
+        return ""
+    inner = raw[k + 1:]
+    for cand in ('"' + inner, '"' + inner + '"'):
+        try:
+            return json.loads(cand)
+        except Exception:
+            continue
+    return ""
+
+
+async def run_agent_stream(question: str, thread_id: str = "default", role: str | None = None):
+    """流式跑一轮问答：一个个 yield 事件字典，前端按 type 处理。
+    事件只有四种：{"type": "token", "text": ...} / {"type": "done", "answer": ..., "refused": ..., "sources": ..., "confidence": ..., "search_rounds": ...}
+    / {"type": "waiting_confirm", "confirm": ...} / {"type": "error", ...}。
+    只取 finalize 节点的 token：model 节点的 token 是调工具的推理过程，不给前端看。
+    拒答（best_score < 0.5）不走模型、没有 token 流：循环结束后再把拒答句当一条 token 发出去，页面行为统一。
+    done 事件里带完整 answer：前端最后拼整条消息用的是它（不是流里抠出来的），抠出来的只负责一段段显示。"""
+    token = _current_role.set(role)  # 设定本次角色；流跑完（或抛异常）都在 finally 里清空
+    try:
+        raw = ""    # finalize 流出来的半截 JSON
+        shown = ""  # 已经发给前端的 answer 文字
+        config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 15}
+        async for event in graph_app.astream_events(
+            {"messages": [HumanMessage(question)], "best_score": 0.0},
+            config,
+            version="v2",
+        ):
+            if event["event"] != "on_chat_model_stream":
+                continue
+            if event["metadata"].get("langgraph_node") != "finalize":
+                continue
+            chunk = event["data"].get("chunk")
+            piece = getattr(chunk, "content", "") or ""  # chunk 是 AIMessageChunk，文字在 .content 上
+            if not piece:
+                continue
+            raw += piece
+            text = _answer_so_far(raw)
+            if len(text) > len(shown):
+                yield {"type": "token", "text": text[len(shown):]}
+                shown = text
+        # 流跑完了：从快照里拿最终状态（astream_events 不返回最终状态，得再读一次）
+        snap = await graph_app.aget_state(config)
+        interrupts = []
+        for task in (snap.tasks or []):
+            interrupts.extend(getattr(task, "interrupts", None) or [])
+        if interrupts:
+            yield {"type": "waiting_confirm", "confirm": interrupts[0].value}
+            return
+        ans = RagAnswer.model_validate_json(snap.values["messages"][-1].content)
+        if ans.refused and not shown:
+            yield {"type": "token", "text": ans.answer}
+        yield {"type": "done", "answer": ans.answer, "refused": ans.refused, "sources": ans.sources,
+               "confidence": ans.confidence, "search_rounds": count_searches(snap.values["messages"])}
+    finally:
+        _current_role.reset(token)

@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from rag_core import client, tools
-from capstone_graph import run_agent, resume_agent  # M3 第 1 步：/ask_graph 走工作项目的图（原来是第 6 课的 agent_graph.py）；M3 第 4 步：resume_agent 续上被确认关卡冻住的图
+from capstone_graph import run_agent, resume_agent, run_agent_stream  # M3 第 1 步：/ask_graph 走工作项目的图（原来是第 6 课的 agent_graph.py）；M3 第 4 步：resume_agent 续上被确认关卡冻住的图；M5 第 3 步：run_agent_stream 流式跑图
 
 RETRIEVAL_URL = os.environ.get("RETRIEVAL_URL", "http://127.0.0.1:8002")  # 环境变量优先：本地跑默认 localhost，Docker 里 compose 传服务名 retrieval-service
 DOC_URL = os.environ.get("DOC_URL", "http://127.0.0.1:8001")  # 同上，Docker 里是 doc-service:8001
@@ -99,6 +99,11 @@ funcs = {
     "count_keyword": _count_keyword,
 }
 
+@app.get("/health")
+def health():
+    # 健康检查：服务活着就返回 ok，给部署和监控用（演示页的状态行也调它）。
+    return {"status": "ok", "service": "agent-service"}
+
 @app.post("/ask")
 def do_ask(req: AskRequest):
     try:
@@ -179,13 +184,14 @@ def ask_tool(req: ToolAskIn):
     return {"answer": "工具调用轮数超限，换个问法试试", "rounds": 5}
 
 @app.post("/ask_graph")
-def ask_graph(req: GraphAskIn):
+async def ask_graph(req: GraphAskIn):
     # M4 第 4 步：先查限流再调模型——超了的请求不花模型钱，直接 429。
+    # M5 第 3 步改 async：run_agent 改 async 后，接口也得 async + await。
     wait = _check_rate_limit(req.session_id)
     if wait is not None:
         raise HTTPException(status_code=429, detail=f"请求太频繁，{wait} 秒后再试", headers={"Retry-After": str(wait)})
     try:
-        ans, search_rounds, waiting = run_agent(req.question, req.session_id, req.role)
+        ans, search_rounds, waiting = await run_agent(req.question, req.session_id, req.role)
         if waiting is not None:
             # 图冻在确认关卡了：还没答案，先把要删的文档号告诉人，等 /ask_graph/confirm 回话。
             return {"question": req.question, "session_id": req.session_id, "status": "waiting_confirm", "confirm": waiting, "answer": "", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": search_rounds, "role": req.role}
@@ -194,13 +200,34 @@ def ask_graph(req: GraphAskIn):
         print("ask_graph 调用失败:", type(e).__name__, e)
         return {"question": req.question, "session_id": req.session_id, "status": "done", "answer": "外部服务暂时不可用，请稍后重试", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": 0}
 
+@app.post("/ask_graph_stream")
+async def ask_graph_stream(req: GraphAskIn):
+    # M5 第 3 步：流式问答（SSE）。和 /ask_graph 同一条图、同一套限流，只是答案一个 token 一个 token 往外吐。
+    # 限流先查——超了直接 429，不进流；流开始后再想拦就晚了。
+    wait = _check_rate_limit(req.session_id)
+    if wait is not None:
+        raise HTTPException(status_code=429, detail=f"请求太频繁，{wait} 秒后再试", headers={"Retry-After": str(wait)})
+    async def gen():
+        # 第一行先告诉前端"正在检索"：第一个 token 之前还要跑改写+检索+精排，别让页面干等。
+        yield 'data: {"type": "status", "text": "正在检索…"}\n\n'
+        try:
+            async for ev in run_agent_stream(req.question, req.session_id, req.role):
+                yield "data: " + json.dumps(ev, ensure_ascii=False) + "\n\n"
+        except Exception as e:
+            print("ask_graph_stream 调用失败:", type(e).__name__, e)
+            yield 'data: {"type": "error", "text": "外部服务暂时不可用，请稍后重试"}\n\n'
+    # X-Accel-Buffering: no 是告诉 Nginx 别缓冲这条流（Nginx 配置里也要加 proxy_buffering off，双保险）。
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
 @app.post("/ask_graph/confirm")
-def confirm_graph(req: GraphConfirmIn):
+async def confirm_graph(req: GraphConfirmIn):
     # M3 第 4 步：续上冻住的图。approved=True 放行去删，False 取消。
     # 每次 curl 都是一个新连接，所以"隔一会儿再确认"本身就是断开再续上的验证——冻住的状态存在 MemorySaver 里，8003 不重启就一直在。
     # 不限流：确认不调模型，冻住的图等不起——限了确认，删一半的流程会被卡住。
+    # M5 第 3 步改 async：resume_agent 改 async 后，接口也得 async + await。
     try:
-        ans, search_rounds, waiting = resume_agent(req.session_id, req.approved)
+        ans, search_rounds, waiting = await resume_agent(req.session_id, req.approved)
         if waiting is not None:
             return {"session_id": req.session_id, "status": "waiting_confirm", "confirm": waiting, "answer": "", "refused": False, "sources": [], "confidence": 0.0, "search_rounds": search_rounds}
         if ans is None:

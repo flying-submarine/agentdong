@@ -13,7 +13,6 @@ import { scrollToBottom,storeData,retrieveData} from '@/service/utils'
 import PopoverConfirm from '@/components/PopoverConfirm.vue'
 import { v4 as uuidv4 } from 'uuid'
 import FeedBack from "./NewFeedback.vue";
-import { askGraph, formatAskGraphAnswer } from '@/service/askGraph';
 
 const modelStore = useModelStore();
 const generating = useGeneratStore();
@@ -45,9 +44,9 @@ globalState.initRagChat = ()=>{
   messages.value.push({ role: "agent", content: "Hello，I am your Wakeb GPT Copilot. How can I help you?",flag:"writing" })
 }
 
-// 线上 /api/agt/ask_graph_stream 会 404（网关未放开），统一走稳定的 /api/agt/ask_graph。
-// 返回结构直接就是 submitChat 需要的 { status, answer, refused, sources, confidence }，
-// 与旧 SSE done 事件字段一致；onToken 用本地分片模拟逐字效果，复用原有打字机渲染。
+// tryChatStream：流式问答——fetch 拿 ReadableStream，一行行读 SSE，token 回调出去；
+// 最后回 done 事件（带 answer / refused / sources / confidence），和原来 /ask_graph 的返回字段对得上。
+// 旧的 tryChat（一次拿整段 JSON）删掉，别留两个入口。
 const tryChatStream = async (
   model,
   inputMessage,
@@ -57,16 +56,38 @@ const tryChatStream = async (
   // 演示站没有登录/历史：sessionId 为空就现场生成一个，每个访客一个会话（session），
   // 记忆（MemorySaver）和限流（每分钟 10 次）都是按它分的；千万别写成固定值
   if (!sessionId.value) sessionId.value = uuidv4()
-  const res = await askGraph(inputMessage, sessionId.value)
-  if (!res) return null
-  // 本地分片喂给气泡，模拟 SSE 的逐字出现（网络仍是一次 POST，观感不变）
-  const full = formatAskGraphAnswer(res)
-  const chunk = 8
-  for (let i = 0; i < full.length; i += chunk) {
-    onToken(full.slice(i, i + chunk))
-    await new Promise(r => setTimeout(r, 24))
+  try {
+    // fetch 调新接口 /ask_graph_stream：SSE 一行行回，先 status，再一串 token，最后 done
+    const res = await fetch('/api/agt/ask_graph_stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: inputMessage, session_id: sessionId.value })
+    })
+    if (!res.ok) return null
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    let doneEv = null
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      const parts = buf.split('\n\n')
+      buf = parts.pop() ?? ''
+      for (const line of parts) {
+        if (!line.startsWith('data: ')) continue
+        const ev = JSON.parse(line.slice(6))
+        if (ev.type === 'token') onToken(ev.text)
+        else if (ev.type === 'done') doneEv = ev
+        else if (ev.type === 'waiting_confirm') doneEv = { status: 'waiting_confirm' }
+        else if (ev.type === 'error') return null
+      }
+    }
+    return doneEv
+  } catch (error) {
+    console.error('ask_graph_stream failed:', error)
+    return null
   }
-  return res
 };
 
 

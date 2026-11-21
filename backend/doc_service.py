@@ -283,11 +283,13 @@ def count_docs():
         raise HTTPException(status_code=502, detail=f"向量库连不上：{e}")
     return {"docs": len(doc_ids), "points": total}
 
-@app.get("/docs")
+@app.get("/list")
 def list_docs():
     # 文档列表（给前端 Recent Records 用）：只取 filename 不为空的任务
     # （/ingest 的纯文本任务没有文件名，不列）。按入库顺序倒序，最新在前。
     # 返回 {data: [...]}，字段是前端要的驼峰名：docId / fileName / createTime / chars / chunks / status。
+    # 注意：路由不能叫 /docs——FastAPI 的 /docs 被内置 Swagger 页面占了，自己写的 /docs 永远抢不过它。
+    # 对外还是 /api/doc/docs（前端契约不变），Nginx 那边把 /api/doc/docs 重写到 /list。
     conn = db()
     try:
         rows = conn.execute(

@@ -1,0 +1,80 @@
+# agentdong 自动部署（CI/CD）：push 到 main 就自动部署到腾讯云香港服务器。
+# 跑一次 = 前端构建 + 后端同步 + 容器重建 + 前端发布 + 健康检查。
+# 密钥只用一个：GitHub 仓库 secret SERVER_SSH_KEY（部署专用的 SSH 私钥，不用密码登录）。
+# 公开仓库的 secret 是加密存的，别人看不到；想吊销就去服务器删 authorized_keys 里那行。
+# API key 不经过 GitHub：容器启动时读服务器上 /home/ubuntu/agentdong/.env（compose 自动读），CI 不碰它。
+# Qdrant 数据在外部 volume 里，重建容器不动它；uploads/ 不同步，服务器上的上传文件不会被覆盖。
+name: Deploy to agentdong.com
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/src/**'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - 'frontend/vite.config.*'
+      - 'frontend/index.html'
+      - 'docker-compose.yml'
+      - 'backend/Dockerfile'
+  workflow_dispatch:  # 手动跑一次（Actions 页面点 Run workflow）
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 43.161.195.227 >> ~/.ssh/known_hosts
+
+      - name: Sync backend and rebuild containers
+        run: |
+          rsync -avz \
+            --exclude='__pycache__' \
+            --exclude='uploads/' \
+            --exclude='tasks.db' \
+            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes" \
+            backend/ ubuntu@43.161.195.227:/home/ubuntu/agentdong/backend/
+          ssh -i ~/.ssh/id_ed25519 ubuntu@43.161.195.227 \
+            'cd /home/ubuntu/agentdong && docker compose up -d --build'
+
+      - name: Publish frontend
+        run: |
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes" \
+            frontend/dist/ ubuntu@43.161.195.227:/home/ubuntu/vue-dist/
+          ssh -i ~/.ssh/id_ed25519 ubuntu@43.161.195.227 \
+            'cp -r /home/ubuntu/vue-dist/* /var/www/agentdong/'
+
+      - name: Health check
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS https://agentdong.com/api/agt/health && curl -fsS https://agentdong.com/api/ret/health && curl -fsS https://agentdong.com/api/doc/health; then
+              echo "health check passed"
+              exit 0
+            fi
+            echo "not ready yet, retry $i/6"
+            sleep 10
+          done
+          echo "health check failed"
+          exit 1

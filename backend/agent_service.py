@@ -25,7 +25,7 @@ DOC_URL = os.environ.get("DOC_URL", "http://127.0.0.1:8001")  # 同上，Docker 
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://agentdong.com", "https://www.agentdong.com"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

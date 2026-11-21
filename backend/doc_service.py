@@ -38,7 +38,7 @@ ALLOWED_EXTS = {".pdf", ".docx", ".md", ".txt"}  # 只收这四种格式，其�
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://agentdong.com", "https://www.agentdong.com"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -13,6 +13,7 @@ const tokenStore = useTokenStore();
 const router = useRouter();
 const isUploading  = ref(false)
 const fileList = ref([]);
+const latestDocId = ref('')   // 最近一次上传到后端 /upload 成功后返回的 doc_id
 const navigateToPage = (id,sd) => {
   const sid = sd ? sd : "x"
   router.push(`/bussiness/LongReportSummarization/${id}/${sid}`);
@@ -77,6 +78,9 @@ const handleChange = (info) => {
 
   if (status === 'done') {
     isUploading.value = false
+    // 后端 doc-service /upload 返回 { task_id, doc_id, filename, status, message, chars }
+    const resp = info.file?.response
+    if (resp?.doc_id) latestDocId.value = resp.doc_id
     message.success({
       content: h('span', { class: 'logR-message-content' }, [
         `${info.file.name.length > 15 ? info.file.name.substring(0,13) + '...' : info.file.name} file uploaded successfully `,
@@ -88,11 +92,18 @@ const handleChange = (info) => {
   } 
   if (info.file?.status === "error") {
     isUploading.value = false
-    message.error(info.file?.response?.message || `${info.file.name} file upload failed.`);
+    // FastAPI HTTPException 的错误体是 { detail: "..." }，兼容旧的 { message } 格式
+    const resp = info.file?.response
+    message.error(resp?.detail || resp?.message || `${info.file.name} file upload failed.`);
   }
 };
 
 const navDetail = ()=>{
+  // 上传走线上 doc-service，直接跳到它返回的 doc_id；没有时回退到旧列表最新一条
+  if (latestDocId.value) {
+    navigateToPage(latestDocId.value)
+    return
+  }
   getRecords().then((data) => {
     if (data.data.length && Array.isArray(data.data) ) {
       const lastestItem = data.data[0]
@@ -101,8 +112,21 @@ const navDetail = ()=>{
     } 
   })
 }
+// 与后端 doc_service.py 的 ALLOWED_EXTS / MAX_FILE_SIZE 保持一致
+const ALLOWED_UPLOAD_EXTS = ['pdf', 'docx', 'md', 'txt']
+const MAX_UPLOAD_SIZE = 20 * 1024 * 1024
+
 const checkUp = (file,fileList)=>{
   // console.log(file,fileList,'file,fileList')
+  const ext = (file.name?.split('.').pop() || '').toLowerCase()
+  if (!ALLOWED_UPLOAD_EXTS.includes(ext)) {
+    message.error('仅支持 PDF / DOCX / MD / TXT 格式')
+    return false
+  }
+  if (file.size > MAX_UPLOAD_SIZE) {
+    message.error('文件不能超过 20MB')
+    return false
+  }
   if (isUploading.value) {
     message.warn('Please wait until the current upload is finished.');
     return false; // 阻止上传
@@ -155,8 +179,8 @@ const onDialogHide = ()=>{
       >
         <a-upload-dragger
           name="file"
-          accept=".pdf" 
-          action="/gpt/lrllm/docs/upload"
+          accept=".pdf,.docx,.md,.txt" 
+          action="/api/doc/upload"
           :headers="customHeaders" 
           @change="handleChange"
           @drop="handleDrop"
@@ -173,8 +197,8 @@ const onDialogHide = ()=>{
         </a-upload-dragger>
         <div class="upload-info">
           <div style="width">
-            <p>Document Size: &lt;30MB</p> 
-            <p>Document Format:.pdf file with text as main content</p>
+            <p>Document Size: &lt;20MB</p> 
+            <p>Document Format: PDF / DOCX / MD / TXT (text-based)</p>
           </div>
           <div>
             <p>Document Pages: &lt;100 pages</p>

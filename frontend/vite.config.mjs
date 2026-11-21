@@ -12,7 +12,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'https://agentdong.com'   // 开发模式：/api 开头的请求转给线上后端
+      '/api': 'https://agentdong.com'   // 开发模式：/api 开头的请求转给线上后端（含 /api/doc/upload 文档上传）
     }
   }
 })

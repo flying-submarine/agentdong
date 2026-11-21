@@ -46,7 +46,7 @@ if not qclient.collection_exists(COLLECTION):
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://agentdong.com", "https://www.agentdong.com"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

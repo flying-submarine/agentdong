@@ -4,8 +4,8 @@ FROM python:3.12-slim
 WORKDIR /app
 # 先拷 requirements，利用 Docker 缓存：依赖不变就不重新 pip install
 COPY requirements.txt .
-# 清华 pip 源（国内快）；--no-cache-dir 不留缓存，镜像小一点
-RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+# 默认 PyPI 官方源（香港服务器走国际带宽，直连就行；清华源从香港连不上，Network is unreachable，2026-11-19 实测）
+RUN pip install --no-cache-dir -r requirements.txt
 # 再拷代码和演示文档（*.py + sample.txt；sample.txt 从 day1 拷进 backend/ 后才有）
 COPY *.py sample.txt ./
 EXPOSE 8001 8002 8003

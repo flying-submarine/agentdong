@@ -13,3 +13,7 @@ python-multipart
 # agent_graph.py（第 6 课）用的
 langgraph
 langchain-openai
+# eval/ 对比脚本用的（第 8 课装过，列在这里是为了一次装全）
+rank-bm25
+jieba
+requests

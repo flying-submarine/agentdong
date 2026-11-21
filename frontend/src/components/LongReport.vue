@@ -224,7 +224,7 @@ const onDialogHide = ()=>{
       </div>
       <Dialog
         class="longR-Dialog"
-        v-model="dialogVisible"
+        v-model:visible="dialogVisible"
         modal
         header="Upload Files"
         style="width:684px;z-index:900"
@@ -293,7 +293,7 @@ const onDialogHide = ()=>{
     </div>
 
     <a-modal
-      v-model="previewVisible"
+      v-model:open="previewVisible"
       :title="previewTitle"
       width="840px"
       :footer="null"

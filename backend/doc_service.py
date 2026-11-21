@@ -13,6 +13,7 @@ import os             # 路径操作：取文件名、拼上传目录、查文�
 import shutil         # 流式复制文件：把上传的文件一点一点写到磁盘，不一次读进内存
 import sqlite3        # Python 自带的轻量数据库：任务状态存在 tasks.db 文件里，重启不丢
 import uuid           # 生成随机任务号 task_id（uuid4 是随机的，每次都不一样）
+from datetime import datetime  # 取现在时间：任务创建时间存在 created_at 里，给前端列表显示用
 import pdfplumber     # 解析 PDF：按页提取文字（pip install pdfplumber）
 from docx import Document  # 解析 Word：读 .docx 的段落（pip install python-docx）
 from fastapi import FastAPI, File, HTTPException, UploadFile  # FastAPI：搭 HTTP 服务；UploadFile/File：接上传的文件；HTTPException：返回 404 这类错误
@@ -38,7 +39,7 @@ ALLOWED_EXTS = {".pdf", ".docx", ".md", ".txt"}  # 只收这四种格式，其�
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://agentdong.com", "https://www.agentdong.com"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -49,18 +50,39 @@ def db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tasks "
-        "(task_id TEXT PRIMARY KEY, status TEXT, chars INTEGER, chunks INTEGER, error TEXT)"
+        "(task_id TEXT PRIMARY KEY, status TEXT, chars INTEGER, chunks INTEGER, error TEXT, filename TEXT, doc_id TEXT, created_at TEXT)"
     )
+    # 老库补列：2026-11-21 加的 filename / doc_id / created_at 三列（给前端“已上传”列表用），
+    # 服务器上的 tasks.db 是旧表结构，启动时自动补上，不用手动改库。
+    # SQLite 的 ADD COLUMN 没有 IF NOT EXISTS，所以先查表结构再补。
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(tasks)")]
+    if "filename" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN filename TEXT")
+    if "doc_id" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN doc_id TEXT")
+    if "created_at" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
     conn.commit()
     return conn
 
-def save_task(task_id, status, chars, chunks=0, error=""):
+def save_task(task_id, status, chars, chunks=0, error="", filename=None, doc_id=None, created_at=None):
     # 把一条任务状态写进 tasks.db。任务号已存在就覆盖（INSERT OR REPLACE），不存在就新建。
+    # filename / doc_id 只在上传时给；没给就保留库里已有的——task_done 回告时不能把文件名冲掉。
+    # created_at 同理：新任务记现在，更新时保留原来的。
     conn = db()
     try:
+        old = conn.execute("SELECT filename, doc_id, created_at FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+        if filename is None and old:
+            filename = old[0]
+        if doc_id is None and old:
+            doc_id = old[1]
+        if created_at is None and old:
+            created_at = old[2]
+        if created_at is None:
+            created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
-            "INSERT OR REPLACE INTO tasks VALUES (?, ?, ?, ?, ?)",
-            (task_id, status, chars, chunks, error),
+            "INSERT OR REPLACE INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (task_id, status, chars, chunks, error, filename, doc_id, created_at),
         )
         conn.commit()
     finally:
@@ -71,14 +93,14 @@ def load_task(task_id):
     conn = db()
     try:
         row = conn.execute(
-            "SELECT status, chars, chunks, error FROM tasks WHERE task_id = ?",
+            "SELECT status, chars, chunks, error, filename, doc_id, created_at FROM tasks WHERE task_id = ?",
             (task_id,),
         ).fetchone()
     finally:
         conn.close()
     if row is None:
         return None
-    return {"status": row[0], "chars": row[1], "chunks": row[2], "error": row[3]}
+    return {"status": row[0], "chars": row[1], "chunks": row[2], "error": row[3], "filename": row[4], "doc_id": row[5], "created_at": row[6]}
 
 def publish_ingest(task_id: str, doc_id: str, text: str, roles=None):
     # roles：这篇文档能给哪些角色看，比如 ["运维"]；不给就是公开，谁都能查（老文档都这样）。
@@ -188,7 +210,7 @@ def upload(file: UploadFile = File(...)):
     if not text.strip():
         raise HTTPException(status_code=400, detail="解析出来是空的：文件里没有可提取的文字（可能是扫描件）")
     doc_id = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-    save_task(task_id, "processing", len(text))
+    save_task(task_id, "processing", len(text), filename=safe_name, doc_id=doc_id)
     publish_ingest(task_id, doc_id, text)
     return {"task_id": task_id, "doc_id": doc_id, "filename": safe_name, "status": "processing", "message": "已收到，正在后台处理", "chars": len(text)}
 
@@ -234,6 +256,65 @@ def delete_doc_endpoint(doc_id: str):
 def stats():
     # 返回 sample.txt 的总字数和块数（第 2 课的 get_doc_stats）。
     return get_doc_stats()
+
+@app.get("/count")
+def count_docs():
+    # 数知识库里有几份文档、几块：Qdrant 没有直接数去重值的接口，
+    # 所以 scroll（翻页读）全部点，按 doc_id 去重。648 个点这个量级一次够了，分页循环是为了以后上万了也不炸。
+    # 返回 {"docs": 份数, "points": 块数}，前端拿 docs 显示。
+    try:
+        doc_ids = set()
+        offset = None
+        while True:
+            points, offset = qclient.scroll(
+                COLLECTION,
+                limit=1000,
+                offset=offset,
+                with_payload=["doc_id"],
+                with_vectors=False,
+            )
+            for p in points:
+                if p.payload and p.payload.get("doc_id"):
+                    doc_ids.add(p.payload["doc_id"])
+            if offset is None:
+                break
+        total = qclient.count(COLLECTION).count
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"向量库连不上：{e}")
+    return {"docs": len(doc_ids), "points": total}
+
+@app.get("/docs")
+def list_docs():
+    # 文档列表（给前端 Recent Records 用）：只取 filename 不为空的任务
+    # （/ingest 的纯文本任务没有文件名，不列）。按入库顺序倒序，最新在前。
+    # 返回 {data: [...]}，字段是前端要的驼峰名：docId / fileName / createTime / chars / chunks / status。
+    conn = db()
+    try:
+        rows = conn.execute(
+            "SELECT doc_id, filename, created_at, chars, chunks, status FROM tasks "
+            "WHERE filename IS NOT NULL ORDER BY rowid DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"data": [{"docId": r[0], "fileName": r[1], "createTime": r[2], "chars": r[3], "chunks": r[4], "status": r[5]} for r in rows]}
+
+@app.get("/docs/{doc_id}/content")
+def get_doc_content(doc_id: str):
+    # 按文档号取全文预览：从 Qdrant 里把这篇的所有块按 chunk_id 排好拼起来。
+    # 注意：块是 200 字、步长 150 的滑动窗口，相邻块有 50 字重叠，拼起来会有重复——预览够用，不是原文件。
+    filt = Filter(must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))])
+    points, _ = qclient.scroll(
+        COLLECTION,
+        limit=1000,
+        with_payload=["doc_id", "chunk_id", "text"],
+        with_vectors=False,
+        scroll_filter=filt,
+    )
+    if not points:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    chunks = sorted(points, key=lambda p: (p.payload.get("chunk_id") if p.payload else 0) or 0)
+    text = "\n\n".join((p.payload.get("text") or "") for p in chunks)
+    return {"data": {"text": text}}
 
 @app.get("/chunk_lengths")
 def chunk_lengths():

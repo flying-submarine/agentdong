@@ -212,8 +212,8 @@ const onDialogHide = ()=>{
 
 
 <template>
-  <PopoverConfirm ref="confirm" />
   <div class="longReport-page">
+    <PopoverConfirm ref="confirm" />
     <div>
       <p style="font-size: 18px;color: #574FD7;font-weight:600;border-bottom:1px solid rgba(172, 199, 255, 0.44)
         ;margin-bottom: 18px;">Create New Doc</p>
@@ -224,7 +224,7 @@ const onDialogHide = ()=>{
       </div>
       <Dialog
         class="longR-Dialog"
-        v-model:visible="dialogVisible"
+        v-model="dialogVisible"
         modal
         header="Upload Files"
         style="width:684px;z-index:900"
@@ -249,7 +249,7 @@ const onDialogHide = ()=>{
           </div>
         </a-upload-dragger>
         <div class="upload-info">
-          <div style="width">
+          <div>
             <p>Document Size: &lt;20MB</p>
             <p>Document Format: PDF / DOCX / MD / TXT (text-based)</p>
           </div>
@@ -293,7 +293,7 @@ const onDialogHide = ()=>{
     </div>
 
     <a-modal
-      v-model:open="previewVisible"
+      v-model="previewVisible"
       :title="previewTitle"
       width="840px"
       :footer="null"
@@ -455,7 +455,8 @@ const onDialogHide = ()=>{
 
 .logR-grid{
   height: calc(100vh - 460px);
-  overflow-y: scroll;
+  min-height: 260px;   /* 视口偏小（如打开 DevTools）时保证卡片仍可见，否则 calc 为负会把容器压成 0 */
+  overflow-y: auto;
 }
 
 .record-card {

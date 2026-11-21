@@ -242,14 +242,23 @@ def task_failed(task_id: str, req: TaskFailedIn):
 
 @app.delete("/doc/{doc_id}")
 def delete_doc_endpoint(doc_id: str):
-    # M3 第 4 步加的：按文档号删掉这篇文档在 Qdrant 里的所有块。先数后删，返回删了几块；
-    # 一篇都没有也返回 0，不报错。注意：只删向量库里的点，uploads/ 里的原文件和 tasks.db 里的任务记录不动（留底备查）。
+    # 按文档号删掉这篇文档在 Qdrant 里的所有块。先数后删，返回删了几块；
+    # 一篇都没有也返回 0，不报错。
+    # 2026-11-21 改：同时删掉 tasks.db 里这篇的任务行——前端 Recent Records 列表就是读这张表，
+    # 不删行的话，删完列表里还显示这篇，点进去预览却是 404（2026-11-21 实测：删掉的 docx 行还在，预览 404）。
+    # uploads/ 里的原文件不动（留底备查）。
     filt = Filter(must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))])
     try:
         n = qclient.count(COLLECTION, count_filter=filt).count
     except Exception:
         n = 0
     qclient.delete(collection_name=COLLECTION, points_selector=filt)
+    conn = db()
+    try:
+        conn.execute("DELETE FROM tasks WHERE doc_id = ?", (doc_id,))
+        conn.commit()
+    finally:
+        conn.close()
     return {"doc_id": doc_id, "deleted": n}
 
 @app.get("/stats")

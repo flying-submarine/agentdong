@@ -113,7 +113,7 @@ const messageContent = ref("Who are you?");
 const messages = ref([]);
 const message_init = () => {
   messages.value = []
-  messages.value.push({ role: "agent", content: "Hello，I am your  GPT Copilot. How can I help you?" })
+  messages.value.push({ role: "agent", content: "你好，我是你的 WakeB 智能助手，有什么可以帮你？" })
 }
 message_init()
 const currentOutputMessageContent = ref("");
@@ -332,7 +332,7 @@ const on_click_clear_context = () => {
     </div>
     <div style="display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; height:60px">
       <!-- <InputText v-tooltip.top="'Enter your username'" type="text" placeholder="Top" /> -->
-      <Button icon="pi pi-refresh" aria-label="Submit" @click="on_click_clear_context" severity="secondary" />
+      <Button icon="pi pi-refresh" aria-label="清空上下文" @click="on_click_clear_context" severity="secondary" />
       <SelectButton v-model="chatMode" size="mini" :options="[CHAT_MODE_FREE_CHAT, CHAT_MODE_FILE_QA]"
         aria-labelledby="basic" />
       <TreeSelect v-if="chatMode === CHAT_MODE_FILE_QA" v-model="selectedDocFile" :options="selectedOptions"
@@ -354,7 +354,7 @@ const on_click_clear_context = () => {
     </div>
     <div id="inputArea">
       <Textarea v-model="messageContent" @keyup.enter="submitChat" id="chatInput" />
-      <Button :disabled="answerLoading ? true : undefined" @click="submitChat" id="submitButton">Submit</Button>
+      <Button :disabled="answerLoading ? true : undefined" @click="submitChat" id="submitButton">发送</Button>
     </div>
   </div>
 </template>

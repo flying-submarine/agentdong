@@ -19,7 +19,7 @@ const news_summaries = ref([]);
 const chatArea = ref<HTMLElement | null>(null);
 
 const messages = ref([
-  // { role: "agent", content: "Hello，I am your Wakeb GPT Copilot. How can I help you?" },
+  // { role: "agent", content: "你好，我是你的 WakeB 智能助手，有什么可以帮你？" },
   // {
   //   role: "user",
   //   content: "Help me summarize the latest news about science and technology please",
@@ -461,7 +461,7 @@ const get_daily_top_news = async () => {
           <InputText v-model="news_chat.keywords" class="flex-auto  w-5rem" placeholder="Keywords" autocomplete="off" />
         </div>
         <div style="height: 60px; padding: 10px">
-          <Button style="height: 40px" @click="submitChat">Submit</Button>
+          <Button style="height: 40px" @click="submitChat">发送</Button>
         </div>
       </div>
     </div>

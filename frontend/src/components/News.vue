@@ -586,7 +586,7 @@ watch(()=>news_chat.value.url, (newVal)=>{
               <Select v-model="news_chat.data_range" optionValue="value" :options="rangeList" optionLabel="label" placeholder="Please select an item" autocomplete="off" style="width: 153px;height: 35px;margin-left:6px;font-size: 14px"/>
             </div>
             <div class="operate" style="width: 92px">
-              <Button style="margin-left:5px;height: 35px;font-size: 14px" @click="submitChat">Submit</Button>
+              <Button style="margin-left:5px;height: 35px;font-size: 14px" @click="submitChat">发送</Button>
             </div>
           </div>
         </TabPanel>

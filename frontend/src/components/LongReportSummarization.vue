@@ -296,7 +296,7 @@ const submitChat = async (event: Event) => {
 
 const messageContent = ref("What topic is this document about?");
 const messages = ref([
-  { role: "agent", content: "Hello，I am your Wakeb GPT Copilot. How can I help you?" },
+  { role: "agent", content: "你好，我是你的 WakeB 智能助手，有什么可以帮你？" },
 ]);
 const currentOutputMessageContent = ref("");
 
@@ -512,7 +512,7 @@ const toArabic=async ()=>{
 }
 const message_init = () => {
   messages.value = []
-  messages.value.push({ role: "agent", content: "Hello，I am your Wakeb GPT Copilot. How can I help you?" })
+  messages.value.push({ role: "agent", content: "你好，我是你的 WakeB 智能助手，有什么可以帮你？" })
 }
 
 onMounted(() => {
@@ -648,7 +648,7 @@ const use_prompt_augmentation = ref(false)
         </div>
         <div id="inputArea">
         <Textarea v-model="messageContent" @keyup.enter="submitChat" id="chatInput" />
-        <Button :disabled="answerLoading ? true : undefined" @click="submitChat" id="submitButton">Submit</Button>
+        <Button :disabled="answerLoading ? true : undefined" @click="submitChat" id="submitButton">发送</Button>
         </div>
     </div>
   </div>

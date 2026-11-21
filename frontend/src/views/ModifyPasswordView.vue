@@ -42,7 +42,7 @@
               <p>The password should be at least 8 characters and include uppercase and lowercase letters, numbers, and special characters.</p>
             </div>
             <div>
-              <Button class="login-submit" @click="submitPassword">Submit</Button>
+              <Button class="login-submit" @click="submitPassword">发送</Button>
             </div>
           </div>
         </SplitterPanel>

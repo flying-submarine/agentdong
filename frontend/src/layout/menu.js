@@ -43,21 +43,21 @@ export const menuList = [
   {
     path: '/bussiness/Newsletter',
     icon: news_svg,
-    name: 'Newsletter',
+    name: '资讯简报',
     menu: true,
     class: "news-menu"
   },
   {
     path: '/bussiness/Chat-With-RAG',
     icon: database,
-    name: 'Chat with RAG',
+    name: '知识库问答',
     menu: true,
     class: "chat-rag-menu",
   },
   {
     path: '/bussiness/LongReportSummarization',
     icon: longText_svg,
-    name: 'Long Report Summarization',
+    name: '长文摘要',
     menu: true,
     class: "long-report-menu"
   },

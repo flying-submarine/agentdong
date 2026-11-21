@@ -50,7 +50,12 @@ const app = createApp(App)
 app.use(CKEditor)
 app.use(PrimeVue, {
     theme: {
-        preset: MyPreset
+        preset: MyPreset,
+        options: {
+            // 强制浅色：项目整体是浅色设计系统，不让 PrimeVue 跟随系统深色模式
+            // （否则 Textarea/Dialog 等组件会变成黑底，和普通 DOM 割裂）
+            darkModeSelector: false
+        }
     },
     ripple: true,
 });

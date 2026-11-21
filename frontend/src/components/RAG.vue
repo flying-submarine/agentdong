@@ -23,7 +23,7 @@ const current_message = ref('')
 // ]);
 
 const messages = ref([
-  { role: "agent", content: "Hello，I am your Wakeb Copilot. How can I help you?" },
+  { role: "agent", content: "你好，我是你的 WakeB 智能助手，有什么可以帮你？" },
   // { role: "user", content: "Help me summarize the latest news about science and technology please" },
   // { role: "agent", content: "Here's a roundup of recent news about science and technology:", news_summary: events },
 ])
@@ -357,7 +357,7 @@ const use_prompt_augmentation = ref(false)
     </div>
     <div class="card flex justify-content-start align-items-center" style="padding:5px 10px">
 
-      <Button icon="pi pi-refresh" aria-label="Submit" @click="on_click_clear_context" severity="secondary" />
+      <Button icon="pi pi-refresh" aria-label="清空上下文" @click="on_click_clear_context" severity="secondary" />
       <span style="line-height: 43px;font-weight: 500;">Database:&ensp;</span>
       <!-- <TreeSelect v-model="news_selected" selectionMode="multiple" @change="on_change_database" :options="databases"
         placeholder="Select News">
@@ -384,7 +384,7 @@ const use_prompt_augmentation = ref(false)
     </div>
     <div id="inputArea">
       <Textarea v-model="user_content" @keyup.enter="submitChat" id="chatInput" />
-      <Button :disabled="answer_loading ? true : undefined" @click="submitChat" id="submitButton">Submit</Button>
+      <Button :disabled="answer_loading ? true : undefined" @click="submitChat" id="submitButton">发送</Button>
     </div>
     <Dialog v-model:visible="edit_database_visiable" modal :draggable="false" :header="selected_knowledge_base.name"
       position="topright" :style="{ width: '30rem' }">
@@ -421,7 +421,7 @@ const use_prompt_augmentation = ref(false)
               <!-- <span>{{ item.updatedAt }}</span> -->
             </div>
           </div>
-          <Button icon="pi pi-trash" aria-label="Submit" @click="delete_knowledge_base_doc(item)" severity="danger" />
+          <Button icon="pi pi-trash" aria-label="删除文档" @click="delete_knowledge_base_doc(item)" severity="danger" />
         </div>
       </div>
     </Dialog>

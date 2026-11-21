@@ -187,7 +187,7 @@ const navPdfIndex = (i) => {
                 <span style="font-size: 12px;font-weight: 400;">
                   words
                 </span>
-                <Button  style="height: 20px;margin-right:10px;font-size: 10px;" @click="submitWords" id="submitBtn">Submit</Button>
+                <Button  style="height: 20px;margin-right:10px;font-size: 10px;" @click="submitWords" id="submitBtn">发送</Button>
                 <Button style="height: 20px;font-size: 10px;" @click="exportPdf" id="exportBtn">Export</Button>
               </p>
             </div>

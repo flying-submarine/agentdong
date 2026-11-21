@@ -239,11 +239,11 @@ const submitChat = async () => {
 
 const messageContent = ref("");
 // const messages = ref([
-//   { role: "agent", content: "Hello，I am your Wakeb GPT Copilot. How can I help you?" },
+//   { role: "agent", content: "你好，我是你的 WakeB 智能助手，有什么可以帮你？" },
 // ]);
 
 const messages = ref([
-  { role: "agent", content: "Hello，I am your Wakeb GPT Copilot. How can I help you?",flag:"writing" },
+  { role: "agent", content: "你好，我是你的 WakeB 智能助手，有什么可以帮你？",flag:"writing" },
 ])
 const currentOutputMessageContent = ref("");
 
@@ -398,7 +398,7 @@ const toArabic=async ()=>{
 }
 const message_init = () => {
   messages.value = []
-  messages.value.push({ role: "agent", content: "Hello，I am your Wakeb GPT Copilot. How can I help you?",flag:"writing" })
+  messages.value.push({ role: "agent", content: "你好，我是你的 WakeB 智能助手，有什么可以帮你？",flag:"writing" })
 }
 const newType = ref(false)
 onMounted(() => {
@@ -577,7 +577,7 @@ const handleScroll = (event)=>{
         </div>
     <div id="inputArea">
       <Textarea :placeholder="initContent" v-model="messageContent" @keyup.enter="submitChat" id="chatInput" />
-      <Button :disabled="answerLoading ? true : undefined" @click="submitChat" id="submitButton">Submit</Button>
+      <Button :disabled="answerLoading ? true : undefined" @click="submitChat" id="submitButton">发送</Button>
     </div>
   </div>
 </template>

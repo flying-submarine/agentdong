@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { serviceFetch } from '@/service/utils';
 import { globalState } from '@/globalState';  
-import { ref, toRefs,onMounted,watch} from "vue";
+import { ref, toRefs, onMounted, watch, computed } from "vue";
 import Checkbox from 'primevue/checkbox';
 import ChatMessage from "./ChatMessage.vue";
 import MarkdownRenderer from './MarkdownRenderer.vue'
@@ -29,8 +29,17 @@ const feedbackList = ref([])
 const questionsList  = ref([])
 const currentOutputMessageContent = ref("");
 const confirm = ref<InstanceType<typeof PopoverConfirm> | null>(null)
+const WELCOME_TEXT = "你好，我是你的 WakeB 智能助手。\n\n我可以基于企业知识库为你答疑。直接在下方输入问题，或点击上方的推荐问题开始吧。"
+
+// 空状态推荐问题：点一下直接提问
+const suggestedQuestions = [
+  "知识库里有哪些文档？",
+  "帮我总结一下核心内容",
+  "这些资料主要讲了什么？"
+]
+
 const messages = ref([
-  { role: "agent", content: "Hello，I am your Wakeb GPT Copilot. How can I help you?",flag:"writing" },
+  { role: "agent", content: WELCOME_TEXT, flag:"writing", welcome: true },
 ])
 
 const buildFbId = ref("")
@@ -41,7 +50,7 @@ const sessionId = ref('')
 let refresh_sessions_handler = ()=>{};
 globalState.initRagChat = ()=>{
   messages.value = []
-  messages.value.push({ role: "agent", content: "Hello，I am your Wakeb GPT Copilot. How can I help you?",flag:"writing" })
+  messages.value.push({ role: "agent", content: WELCOME_TEXT, flag:"writing", welcome: true })
 }
 
 // tryChatStream：流式问答——fetch 拿 ReadableStream，一行行读 SSE，token 回调出去；
@@ -198,7 +207,7 @@ const init_phrases = ()=>{
 
 const message_init = () => {
   messages.value = []
-  messages.value.push({ role: "agent", content: "Hello，I am your Wakeb GPT Copilot. How can I help you?",flag:"writing" })
+  messages.value.push({ role: "agent", content: WELCOME_TEXT, flag:"writing", welcome: true })
 }
 
 onMounted(() => {
@@ -326,12 +335,28 @@ const getFdInfo = (fbId)=>{
   <div id="chatBox">
     <div id="chatContainer">
       <div id="chatArea" ref="chatArea" class="ragchat_page" >
-        <div v-for="(message, idx ) in messages" :key="message.content">
+        <div v-for="(message, idx ) in messages" :key="idx + '-' + message.content">
           <ChatMessage :message="agentParseData(message,'text')" :notNeedHeadImage="message.role==='phrase'" :isPhrase="message.role==='phrase'">
             <MarkdownRenderer :source="agentParseData(message,'text').content" @enterMessage="submitMessage" :isPhrase="message.role==='phrase'"/>
-            <div style="margin-left: 2rem;" class="refrence" >
+
+            <!-- 欢迎语：给出可点的推荐问题，不显示毫无意义的点赞/点踩/复制 -->
+            <div v-if="message.welcome" class="welcome-suggestions">
+              <button
+                v-for="q in suggestedQuestions"
+                :key="q"
+                type="button"
+                class="suggestion-chip"
+                @click="submitMessage(q)"
+              >
+                <i class="pi pi-sparkles" aria-hidden="true"></i>
+                <span>{{ q }}</span>
+              </button>
+            </div>
+
+            <!-- 真实回答：引用与反馈 -->
+            <div v-else-if="message.role === 'agent'" style="margin-left: 2rem;" class="refrence" >
               <div v-for="ref in agentParseData(message,'refe').content">
-                <p dir = "auto" style="color: black">{{ ref.title }}</p>
+                <p dir = "auto" class="ref-title">{{ ref.title }}</p>
                 <p :title="ref.content" style='overflow: hidden; white-space:nowrap;font-style: italic; text-overflow: ellipsis' dir = "auto">
                   {{ ref.content }}</p>
               </div>
@@ -356,51 +381,56 @@ const getFdInfo = (fbId)=>{
         </div>
       </div>
     </div>
-    <div style="padding-left: 10px;">
-      <Checkbox v-model="knowBase" style="margin-right:10px;" :binary="true" /> 
-      <span >Chat with Knowledge Base</span>
-    </div>
-    <div id="inputArea">
-      <div style="position: relative;flex: 1;margin-right: 10px;">
-        <Textarea 
-          v-model="messageContent"  
-          @keyup.enter="submitChat" 
-          id="chatInput" 
-          :maxlength="knowBase ? maxTokens : null"
-          style="padding-bottom: 25px;" 
-          dir = "auto"
-        /> 
-        <!-- 计数器 -->
-        <span v-if="knowBase" style="position: absolute; bottom: 5px; right: 10px; font-size: 12px; color: gray;">
-          <span :class="messageContent.length>maxTokens && 'overCount' ">{{ messageContent.length }}</span>/{{maxTokens}}
-        </span>
+    <div class="composer">
+      <div class="composer-options">
+        <label class="kb-toggle">
+          <Checkbox v-model="knowBase" :binary="true" inputId="kbCheckbox" />
+          <span>检索知识库作答</span>
+        </label>
+        <span class="kb-hint">开启后，回答会参考知识库中的文档内容</span>
       </div>
-      <Button  @click="commonPhrases" id="commonPhrases" label="Common Phrases" style="margin-right:5px;width:132px;font-size: 16px;"/>
-      <Button :disabled="generating.status ? true : undefined" @click="submitChat" style="width:132px;font-size: 16px;" label="Submit" id="submitButton"/>
-      <Dialog v-model:visible="visibleDialog" modal header="Common Phrases" style="width: 650px;z-index:900">
-        <PopoverConfirm ref="confirm" id="ragH_p"/>
-        <div class="i_textA flex items-center gap-4 mb-4" >
-          <Textarea v-model="phraseContent" id="phraseInput" dir="auto"/>
-          <p class="add_phrase" @click="addPhrases">
-            <i class="pi pi-plus" style="font-size: 1.5rem ; color: #ffffff" />
-          </p>
+      <div id="inputArea">
+        <div class="input-wrap">
+          <Textarea
+            v-model="messageContent"
+            @keyup.enter.exact.prevent="submitChat"
+            id="chatInput"
+            :maxlength="knowBase ? maxTokens : null"
+            placeholder="输入你的问题，按 Enter 发送…"
+            dir="auto"
+          />
+          <!-- 计数器 -->
+          <span v-if="knowBase" class="char-counter">
+            <span :class="messageContent.length > maxTokens && 'overCount'">{{ messageContent.length }}</span>/{{maxTokens}}
+          </span>
         </div>
-        <div style="max-height:460px;overflow-y: hidden;" >
-          <p 
-            v-for="(item, index) in phrasesList" 
-            class="defalut_phrase" 
-            :key="index"
+        <Button @click="commonPhrases" id="commonPhrases" label="常用语" icon="pi pi-bookmark" class="composer-btn" text />
+        <Button :disabled="generating.status ? true : undefined" @click="submitChat" label="发送" icon="pi pi-send" id="submitButton" class="composer-btn composer-submit"/>
+      </div>
+      <Dialog v-model:visible="visibleDialog" modal header="常用语" style="width: 650px;z-index:900">
+        <PopoverConfirm ref="confirm" id="ragH_p"/>
+        <p class="dialog-tip">添加后，点击任意常用语即可快速提问（最多 10 条）</p>
+        <div class="i_textA flex items-center gap-4 mb-4" >
+          <Textarea v-model="phraseContent" id="phraseInput" dir="auto" placeholder="输入一条常用语…"/>
+          <button type="button" class="add_phrase" @click="addPhrases" aria-label="添加常用语">
+            <i class="pi pi-plus" aria-hidden="true" />
+          </button>
+        </div>
+        <div class="phrase-list">
+          <div
+            v-for="(item, index) in phrasesList"
+            class="defalut_phrase"
+            :key="item.id ?? index"
           >
-          <p 
-            @click="clickItem(item.phrases)"  
-            v-tooltip="`${index + 1}. ${item.phrases}`"
-            style="width: 90%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
-            dir = "auto"
-          >
-            {{ `${index + 1}. ${item.phrases}` }}
-          </p>
-            <Button @click.stop="on_delete_session($event,item.id)" rounded text style="font-size: 1rem;color: #666666;" icon="pi pi-trash" />
-          </p>
+            <span
+              class="phrase-text"
+              @click="clickItem(item.phrases)"
+              v-tooltip="item.phrases"
+              dir="auto"
+            >{{ `${index + 1}. ${item.phrases}` }}</span>
+            <Button @click.stop="on_delete_session($event,item.id)" rounded text class="phrase-delete" icon="pi pi-trash" aria-label="删除" />
+          </div>
+          <p v-if="!phrasesList.length" class="phrase-empty">还没有常用语，在上方添加一条吧</p>
         </div>
       </Dialog>
     </div>
@@ -410,111 +440,205 @@ const getFdInfo = (fbId)=>{
 <style scoped>
 #chatBox {
   display: flex;
+  flex: 1;          /* 作为 .rag-content(flex 容器)的子项，必须自己撑满主轴，否则右侧留白 */
+  min-width: 0;
   height: 100%;
   flex-direction: column;
 }
 
-.ragchat_page .phrase .refrence{
+.ragchat_page .phrase .refrence,
+.ragchat_page .userMessage .refrence {
   display: none;
 }
 
-.ragchat_page .userMessage  .refrence{
-  display: none;
-}
+::v-deep .ragchat_page .agentMessage .custom-icon { width: 36px; }
 
-::v-deep .ragchat_page .agentMessage .custom-icon{
-  width:36px;
-}
-
-::v-deep .ragchat_page  .agentMessage .w-full{
+/* 让助手气泡铺满整行（共享组件默认 max-width:74% 会留一大片空白）。
+   只在本页覆盖，不影响 News / Writing 等其他共用 ChatMessage 的页面。 */
+::v-deep .ragchat_page .agentMessage .w-full {
+  flex: 1 1 auto;
+  max-width: 100%;
   overflow: auto;
 }
 
+.hovered { background-color: var(--app-surface-3); }
+.clicked { background-color: var(--app-surface-3); }
+.overCount { color: var(--app-danger); }
+.w-full .markdown-body { background-color: transparent; }
+.item_padding { padding: 5px; }
 
-/* 悬浮时的背景色 */
-.hovered {
-  background-color: #f0f0f0;
-}
-.overCount{
-  color:red;
-}
-/* 点击后的背景色 */
-.clicked {
-  background-color: #dcdcdc;
-}
-#chatInput::placeholder {
-  color: rgba(0, 0, 0, 0.35);
+.ref-title { color: var(--app-text); font-weight: 600; }
 
-}
-.w-full .markdown-body{
-  background-color: transparent;
-}
-.item_padding {
-  padding: 5px;
-}
-.defalut_phrase{
+/* ---------- 欢迎语 + 空状态推荐问题 ---------- */
+.welcome-suggestions {
   display: flex;
-  justify-content: space-between;
-  margin-bottom: 6px;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0 6px 2rem;
 }
-.defalut_phrase:hover{
-  background: rgba(0, 0, 0, 0.1);
+.suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 15px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  color: var(--app-text-2);
+  font-size: 13px;
+  line-height: 1.4;
   cursor: pointer;
+  transition: all 0.15s;
+}
+.suggestion-chip i { color: var(--app-primary); font-size: 13px; }
+.suggestion-chip:hover {
+  border-color: var(--app-primary);
+  background: var(--app-primary-soft);
+  color: var(--app-primary);
+  transform: translateY(-1px);
 }
 
 #chatContainer {
   position: relative;
   width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
-
 #chatArea {
   position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  right: 0;
+  inset: 0;
   overflow-y: auto;
-}
-.i_textA{
-  position:relative;
-  margin-bottom: 10px;
+  padding: 22px 24px 8px;
 }
 
-#phraseInput{
-  width: 100%;
-  height: 65px;
-  padding-right: 40px;
-  background-color: rgba(68,64,255,0.1);
-  border-radius: 9px;
+/* ---------- 输入区 ---------- */
+.composer {
+  flex: 0 0 auto;
+  padding: 0 14px 14px;
 }
-
-.add_phrase{
-  background-color: rgba(149,148,255,1);
-  position: absolute;
-  width:32px;
-  height:32px;
-  border-radius: 16px;
-  right:9px;
-  top:17px;
+.composer-options {
   display: flex;
-  justify-content: center;
   align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding-left: 2px;
 }
-
+.kb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--app-text);
+  cursor: pointer;
+  user-select: none;
+}
+.kb-hint {
+  font-size: 12px;
+  color: var(--app-text-3);
+}
 #inputArea {
   display: flex;
-  height: 87px;
+  align-items: flex-end;
+  gap: 10px;
   width: 100%;
-  padding: 10px;
 }
-
+.input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
 #chatInput {
   width: 100%;
-  height: 100%;
-  padding: 10px;
-  border-color:#BCD2FF;
+  min-height: 72px;
+  max-height: 180px;
+  padding: 12px 14px 26px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  color: var(--app-text);
+  resize: none;
+  line-height: 1.6;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+#chatInput:focus {
+  outline: none;
+  border-color: var(--app-primary);
+  box-shadow: 0 0 0 3px var(--app-primary-ring);
+}
+#chatInput::placeholder { color: var(--app-text-3); }
+.char-counter {
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  font-size: 12px;
+  color: var(--app-text-3);
+  pointer-events: none;
+}
+.composer-btn.p-button {
+  height: 44px;
+  flex: 0 0 auto;
+  font-size: 14px;
+  font-weight: 600;
+}
+.composer-submit.p-button { min-width: 104px; }
+
+/* ---------- 常用语弹窗 ---------- */
+.dialog-tip { font-size: 12px; color: var(--app-text-2); margin-bottom: 12px; }
+.i_textA { position: relative; margin-bottom: 12px; }
+#phraseInput {
+  width: 100%;
+  height: 62px;
+  padding: 10px 48px 10px 12px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-surface);
+  color: var(--app-text);
   resize: none;
 }
+#phraseInput:focus { outline: none; border-color: var(--app-primary); box-shadow: 0 0 0 3px var(--app-primary-ring); }
+.add_phrase {
+  position: absolute;
+  right: 10px;
+  top: 15px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--app-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.add_phrase:hover { background: var(--app-primary-hover); }
+.phrase-list { max-height: 340px; overflow-y: auto; }
+.defalut_phrase {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--app-border);
+  border-radius: 6px;
+}
+.defalut_phrase:hover { background: var(--app-primary-soft); cursor: pointer; }
+.phrase-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--app-text);
+}
+.phrase-delete.p-button { color: var(--app-text-3); flex: 0 0 auto; }
+.phrase-delete.p-button:hover { color: var(--app-danger); background: #fef3f2; }
+.phrase-empty { text-align: center; color: var(--app-text-3); font-size: 13px; padding: 24px 0; }
 
+@media (max-width: 600px) {
+  .kb-hint { display: none; }
+  .composer-btn.p-button { padding: 0 12px; }
+}
 </style>

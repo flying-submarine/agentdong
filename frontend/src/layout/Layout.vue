@@ -41,7 +41,7 @@
               @click.prevent="handleNavigation(navigate)"
             >
               <img :src="getImage('/bussiness/AccountManage')" class="side-nav-icon" alt="" />
-              <span class="side-nav-label">Account Management</span>
+              <span class="side-nav-label">账号管理</span>
             </a>
           </router-link>
           <button class="logout-btn" @click="logout">

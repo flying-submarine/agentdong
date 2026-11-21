@@ -31,7 +31,7 @@ const questionsList  = ref([])
 const ssCreateid=ref("")
 const buildFbId = ref("")
 const messages = ref([
-  { role: "agent", content: "Hello，I am your Wakeb GPT Copilot. How can I help you?",flag:"writing" },
+  { role: "agent", content: "你好，我是你的 WakeB 智能助手，有什么可以帮你？",flag:"writing" },
 ])
 // 获取路径中的 ID
 
@@ -294,7 +294,7 @@ const getFdInfo = (fbId)=>{
           dir="auto"
         /> 
       </div>
-      <Button :disabled="generatStore.status ? true : undefined" @click="submitChat" style="width:132px" label="Submit" id="submitButton">
+      <Button :disabled="generatStore.status ? true : undefined" @click="submitChat" style="width:132px" label="发送" id="submitButton">
         <img :src="LongReportSubmit" alt="Long Report Icon" style="width: 34px; height: 34px;">
       </Button>
     </div>

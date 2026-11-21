@@ -25,7 +25,7 @@ const messages = ref<Message[]>([])
 
 const message_init = () => {
   messages.value = []
-  messages.value.push({ role: "agent", content: "Hello，I am your Wakeb GPT Copilot. How can I help you?" })
+  messages.value.push({ role: "agent", content: "你好，我是你的 WakeB 智能助手，有什么可以帮你？" })
 }
 const messageContent = ref('who is the best palyer in this event')
 

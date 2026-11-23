@@ -1,11 +1,5 @@
-<script setup>
-import AccessGate from '@/components/AccessGate.vue'
-</script>
-
 <template>
-  <AccessGate>
-    <router-view></router-view>
-  </AccessGate>
+  <router-view></router-view>
 </template>
 <style>
 .p-popover  .pi-info-circle{

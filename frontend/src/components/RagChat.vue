@@ -29,13 +29,13 @@ const feedbackList = ref([])
 const questionsList  = ref([])
 const currentOutputMessageContent = ref("");
 const confirm = ref<InstanceType<typeof PopoverConfirm> | null>(null)
-const WELCOME_TEXT = "你好，我是你的 WakeB 智能助手。\n\n我可以基于企业知识库为你答疑。直接在下方输入问题，或点击上方的推荐问题开始吧。"
+const WELCOME_TEXT = "你好，我是你的 WakeB 智能助手。\n\n我可以基于企业知识库为你答疑。直接在下方输入问题，或上传文档，自己提问相关问题。"
 
 // 空状态推荐问题：点一下直接提问
 const suggestedQuestions = [
-  "知识库里有哪些文档？",
-  "帮我总结一下核心内容",
-  "这些资料主要讲了什么？"
+  "Prometheus是什么 ？",
+  "Kubernetes 安全加固有哪些关键措施？",
+  "Rag是什么 ？"
 ]
 
 const messages = ref([
